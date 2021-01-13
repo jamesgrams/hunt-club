@@ -1,0 +1,24 @@
+{
+  "name": "huntclub",
+  "author": "James Grams <james@game103.net>",
+  "version": "1.0.0",
+  "description": "Hunt Club",
+  "main": "src/index.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.16.0",
+    "mysql2": "^2.1.0"
+  },
+  "engines": {
+    "node": ">= 10.10.0",
+    "npm": ">= 3.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not ie <= 8"
+  ]
+}
