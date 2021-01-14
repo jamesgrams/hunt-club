@@ -1,135 +1,182 @@
-var CIRCLE_DIAMETER_PERCENT = 18/1208; // this is the diameter of the circles - it is a percentage of the width of the image
 var STATUS_FETCH_INTERVAL = 1000;
 var GENERIC_ERROR = "An error has occurred";
+var ID_COOKIE = "hunt-club-id";
+var TOKEN_COOKIE = "hunt-club-token";
 
-var boxes = [
-    {
-        name: "1B",
-        points: [0.2907350993377483, 0.19740229885057472]
-    },
-    {
-        name: "2B",
-        points: [0.3294701986754967, 0.28991060025542786]
-    },
-    {
-        name: "3B",
-        points: [0.4478476821192053, 0.27458492975734355]
-    },
-    {
-        name: "4B",
-        points: [0.49503311258278143, 0.23116219667943805]
-    },
-    {
-        name: "5B",
-        points: [0.25, 0.39208173690932313]
-    },
-    {
-        name: "6B",
-        points: [0.3445430463576159, 0.3956360153256705]
-    },
-    {
-        name: "7B",
-        points: [0.43625827814569534, 0.3895274584929757]
-    },
-    {
-        name: "8B",
-        points: [0.1804635761589404, 0.5019157088122606]
-    },
-    {
-        name: "9B",
-        points: [0.27483443708609273, 0.4789272030651341]
-    },
-    {
-        name: "10B",
-        points: [0.38079470198675497, 0.5095785440613027]
-    },
-    {
-        name: "11B",
-        points: [0.45795364238410596, 0.4671558109833972]
-    },
-    {
-        name: "12B",
-        points: [0.271523178807947, 0.6679438058748404]
-    },
-    {
-        name: "13B",
-        points: [0.304635761589404, 0.6309067688378033]
-    },
-    {
-        name: "14B",
-        points: [0.36258278145695366, 0.6130268199233716]
-    },
-    {
-        name: "15B",
-        points: [0.3667218543046358, 0.7215836526181354]
-    },
-    {
-        name: "16B",
-        points: [0.4470198675496689, 0.7445721583652618]
-    },
-    {
-        name: "17B",
-        points: [0.18543046357615894, 0.5593869731800766]
-    },
-    {
-        name: "19B",
-        points: [0.34519867549668876, 0.7471264367816092]
-    },
-    {
-        name: "20B",
-        points: [0.31539735099337746, 0.789272030651341]
-    },
-    {
-        name: "21B",
-        points: [0.23841059602649006, 0.7369093231162197]
-    },
-    {
-        name: "22B",
-        points: [0.1870860927152318, 0.6283524904214559]
-    }
-];
+var circleDiameterPercent;
 var statusTimeout;
+var mapId;
 var locations = {};
+var currentDrawStatus = {};
+var nextDrawStatus = {};
 
 window.addEventListener('load', function() {
 
-    fetchStatus();
-    addBoxes();
-    window.onresize = addBoxes;
-    var name = document.querySelector("#name");
-    name.oninput = function() {
-        window.localStorage.huntClubName = name.value;
+    loadMap();
+    setupLogin();
+    setupDrawing();
+
+});
+
+/**
+ * Setup the drawing section.
+ */
+function setupDrawing() {
+    // TODO - disable?
+    document.querySelectorAll("#enter-next, #exit-next").forEach( function(el) {
+        el.onclick = function() {
+            makeRequest("POST", "/drawing", {}, function(text) {
+                createToast( el.getAttribute("id") === "enter-next" ? "Drawing entered" : " Drawing exited" );
+                // Changes made in heartbeat status
+            }, errorToast);
+        }
+    });
+}
+
+/**
+ * Setup the login section.
+ */
+function setupLogin() {
+    var idCookie = getCookie(ID_COOKIE);
+    var tokenCookie = getCookie(TOKEN_COOKIE);
+    if( !idCookie || !tokenCookie ) {
+        deleteCookie(ID_COOKIE);
+        deleteCookie(TOKEN_COOKIE);
+        document.querySelector("#logout-section").classList.add("hidden");
+        document.querySelector("#login-section").classList.remove("hidden");
+        document.querySelector("#user-name").innerText = "";
+        document.querySelectorAll(".box").forEach( function(el) {
+            el.parentElement.removeChild(el);
+        });
     }
-    if( window.localStorage.huntClubName ) {
-        name.value = window.localStorage.huntClubName;
+    else {
+        document.querySelector("#login-section").classList.add("hidden");
+        document.querySelector("#logout-section").classList.remove("hidden");
+        var info = JSON.parse(decodeURIComponent(idCookie));
+        document.querySelector("#user-name").innerText = info.name;
     }
 
+    document.querySelector("#login").onclick = function(e) {
+        e.preventDefault();
+        var email = document.querySelector("#email");
+        var password = document.querySelector("#password");
+        var emailValue = email.value;
+        var passwordValue = password.value;
+        email.value = "";
+        password.value = "";
+        makeRequest("POST", "/login", {
+            email: emailValue,
+            password: passwordValue
+        }, function(text) {
+            createToast("Logged in");
+            setupLogin();
+        }, errorToast);
+    }
+    document.querySelector("#logout").onclick = function(e) {
+        e.preventDefault();
+        deleteCookie(ID_COOKIE);
+        deleteCookie(TOKEN_COOKIE);
+        setupLogin();
+    }
+}
+
+/**
+ * Load the Map.
+ */
+function loadMap() {
+    var url = new URL(window.location.href);
+    mapId = url.searchParams.get("map");
+    makeRequest("GET", "/map", { mapId: mapId }, function(text) {
+        var json = JSON.parse(text);
+        circleDiameterPercent = json.map.circle_diameter;
+        var img = document.createElement("img");
+        img.setAttribute("src", json.map.image_src);
+        img.setAttribute("alt", json.map.name + " Map");
+        document.querySelector("#map").appendChild(img);
+        document.title = json.map.name + ": " + document.title;
+        var h1 = document.querySelector("h1");
+        h1.innerText = json.map.name + ": " + h1.innerText;
+
+        addDeveloperHelper();
+        fetchStatus(); // start fetching status
+    }, errorToast);    
+}
+
+/**
+ * Add the developer click helper for creating new map positions.
+ */
+function addDeveloperHelper() {
     // HELPER
     var img = document.querySelector("img");
     // helps for creating the boxes
     img.onclick = function(e) {
         var width = img.offsetWidth;
         var height = img.offsetHeight;
-        var diameter = CIRCLE_DIAMETER_PERCENT * width;
+        var diameter = circleDiameterPercent * width;
         var radius = diameter/2;
         // top left - you click on the center
         var box = [(e.offsetX-radius)/width,(e.offsetY-radius)/height];
         console.log(box);
     }
-});
+}
 
 /**
  * Update the current status.
  */
 function fetchStatus() {
-    makeRequest("GET", "/status", {}, function(text) {
-        locations = JSON.parse(text).locations;
+    if( !getCookie(TOKEN_COOKIE) ) { // don't make unecessary requests
         setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
+        return;
+    }
+    makeRequest("GET", "/status", { mapId: mapId }, function(text) {
+        var json = JSON.parse(text);
+        locations = json.locations;
+        currentDrawStatus = json.currentDrawStatus;
+        nextDrawStatus = json.nextDrawStatus;
+        setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
+        window.onresize = addBoxes;
         addBoxes(); // redraw
+        addDraws();
     }, function(err) {
         console.log(err);
         setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
     });
+}
+
+/**
+ * Add drawing information.
+ */
+function addDraws() {
+    var currentDrawingSection = document.querySelector("#current-drawing-section");
+    var currentDrawingPlace = currentDrawingSection.querySelector("#current-drawing-place");
+    var currentDrawingOn = currentDrawingSection.querySelector("#current-drawing-on");
+    var currentDrawingTimeLeft = currentDrawingSection.querySelector("#current-drawing-time-left");
+    if( currentDrawStatus.drawHappening ) {
+        currentDrawingPlace.innerText = (currentDrawStatus.drawOrder !== null) ? (currentDrawStatus.drawOrder + 1) : "Not Entered";
+        currentDrawingOn.innerText = currentDrawStatus.drawOn + 1;
+        currentDrawingTimeLeft.innerText = currentDrawStatus.drawSecondsLeft;
+        currentDrawingSection.classList.remove("hidden");
+        if( currentDrawStatus.drawOn === currentDrawStatus.drawOrder ) currentDrawingSection.classList.add("your-draw");
+        else currentDrawingSection.classList.remove("your-draw");
+    }
+    else {
+        currentDrawingPlace.innerText = "";
+        currentDrawingOn.innerText = "";
+        currentDrawingTimeLeft.innerText = "";
+        currentDrawingSection.classList.add("hidden");
+        currentDrawingSection.classList.remove("your-draw");
+    }
+
+    var enterNext = document.querySelector("#enter-next");
+    var exitNext = document.querySelector("#exit-next");
+    if( nextDrawStatus.inNextDraw ) {
+        enterNext.classList.add("hidden");
+        exitNext.classList.remove("hidden");
+    }
+    else {
+        exitNext.classList.add("hidden");
+        enterNext.classList.remove("hidden");
+    }
 }
 
 /**
@@ -141,71 +188,68 @@ function addBoxes() {
     var map = document.querySelector("#map");
     var width = img.offsetWidth;
     var height = img.offsetHeight;
-    var diameter = CIRCLE_DIAMETER_PERCENT * width;
-    for( var i=0; i<boxes.length; i++ ) {
-        var box = boxes[i];
+    var diameter = circleDiameterPercent * width;
+    var locationIds = Object.keys(locations);
+    for( var i=0; i<locationIds.length; i++ ) {
+        var location = locations[locationIds[i]];
         var boxElement;
         if( boxElements.length ) {
             boxElement = boxElements[i];
             var prevPopout = boxElement.querySelector(".popout"); 
             if( prevPopout ) {
                 prevPopout.parentElement.removeChild(prevPopout);
-                createPopout(box, boxElement);
+                createPopout(location, boxElement);
             } ;
         }
         else {
             boxElement = document.createElement("div");
             boxElement.classList.add("box");
         }
-        boxElement.setAttribute("style", "left:" + box.points[0]*width + "px;top:" + box.points[1]*height + "px;width:" + diameter + "px;height:" + diameter + "px;");
-        if( locations[box.name] ) boxElement.classList.add("box-taken");
+        boxElement.setAttribute("style", "left:" + location.location.x*width + "px;top:" + location.location.y*height + "px;width:" + diameter + "px;height:" + diameter + "px;");
+        if( location.user.id ) boxElement.classList.add("box-taken");
         else boxElement.classList.remove("box-taken");
-        boxElement.onclick = (function(box, boxElement) {
+        boxElement.onclick = (function(location, boxElement) {
             return function(e) {
-                if( !boxElement.querySelector(".popout") ) createPopout(box, boxElement);
+                if( !boxElement.querySelector(".popout") ) createPopout(location, boxElement);
                 e.stopPropagation();
             }
-        })(box, boxElement);
+        })(location, boxElement);
         map.appendChild(boxElement);
     }
 }
 
 /**
  * Create a popout.
- * @param {Object} box - The box object.
+ * @param {Object} location - The location object.
  * @param {HTMLElement} boxElement - The box element.
  */
-function createPopout(box, boxElement) {
+function createPopout(location, boxElement) {
     document.body.click(); // get rid of the previous popup
     var popout = document.createElement("div");
     popout.classList.add("popout");
-    popout.innerText = box.name;
-    if( locations[box.name] ) popout.innerHTML += "<br>" + locations[box.name];
-    popout.innerHTML += "<br>";
+    var popoutTitle = document.createElement("div");
+    popoutTitle.classList.add("popout-title");
+    popoutTitle.innerText = location.location.name;
+    popout.appendChild(popoutTitle);
+    if( location.user.id ) {
+        var popoutName = document.createElement("div");
+        popoutName.classList.add("popout-name");
+        popoutName.innerText = location.user.name;
+        popout.appendChild(popoutName);
+        var popoutPhone = document.createElement("div");
+        popoutPhone.classList.add("popout-phone");
+        popoutPhone.innerText = location.user.phone;
+        popout.appendChild(popoutPhone);
+    }
+    
     var punch = document.createElement("button");
     punch.innerText = "Punch";
     punch.onclick = function() {
-        var name = document.querySelector("#name").value;
-        if( !name ) {
-            createToast("Please enter a name");
-        }
-        else {
-            makeRequest("POST", "/check", {
-                name: name,
-                location: box.name
-            }, function(text) {
-                createToast("Punch Successful");
-            }, function(text) {
-                try {
-                    var json = JSON.parse(text);
-                    if( json.message ) createToast(json.message);
-                    else createToast(GENERIC_ERROR)
-                }
-                catch(err) {
-                    createToast(GENERIC_ERROR);
-                }
-            })
-        }
+        makeRequest("POST", "/check", {
+            locationId: location.location.id
+        }, function(text) {
+            createToast("Punch Successful");
+        }, errorToast);
     }
     popout.appendChild(punch);
     boxElement.appendChild(popout);
@@ -296,4 +340,36 @@ function createToast(message, type, html) {
             }, 500 ); // Make sure this matches the css
         }, 4000 )
     }, 0 ); // Set timeout to add the opacity transition
+}
+
+/**
+ * Standard error toast response from a request.
+ * @param {string} text - The response text
+ */
+function errorToast(text) {
+    try {
+        var json = JSON.parse(text);
+        if( json.message ) createToast(json.message);
+        else createToast(GENERIC_ERROR)
+    }
+    catch(err) {
+        createToast(GENERIC_ERROR);
+    };
+}
+
+/**
+ * Remove a cookie.
+ * @param {string} name - The name of the cookie to remove.
+ */
+function deleteCookie(name) {
+    document.cookie = name +'=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+}
+
+/**
+ * Get a cookie.
+ * @param {string} a - The name of the cookie. 
+ */
+function getCookie(a) {
+    var b = document.cookie.match('(^|;)\\s*' + a + '\\s*=\\s*([^;]+)');
+    return b ? b.pop() : '';
 }

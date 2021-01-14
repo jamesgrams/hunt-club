@@ -19,23 +19,43 @@
 
 .popout {
     position: absolute;
-    width: 100px;
-    border: 1px solid black;
+    border: 2px solid black;
     background-color: white;
     z-index: 2;
     bottom: 10px;
-    left: calc(50% - 50px);
+    left: 50%;
+    transform: translateX(-50%);
     text-align: center;
+    padding: 10px 20px;
+    border-radius: 25px;
     box-sizing: border-box;
-    padding: 10px;
+    cursor: default;
+    width: 170px;
+}
+
+.popout-title {
+    font-weight: bold;
 }
 
 button {
     display: inline-block;
+    cursor: pointer;
+}
+
+.hidden {
+    display: none;
+}
+
+#text-section, #text-section input, #text-section button, .popout button {
+    font-size: 18px;
+}
+
+#text-section {
+    padding-bottom: 20px;
 }
 
 .toast {
-    position: absolute;
+    position: fixed;
     z-index: 1000;
     top: 10%;
     padding: 20px;
@@ -52,4 +72,24 @@ button {
 
 .toast-shown {
     opacity: 1;
+}
+
+#current-drawing-place::before {
+    content: "Your Position: "
+}
+
+#current-drawing-on::before {
+    content: "Current Position: "
+}
+
+#current-drawing-time-left::before {
+    content: "Time Left: "
+}
+
+#current-drawing-time-left::after {
+    content: "s"
+}
+
+#current-drawing-section.your-draw {
+    color: red;
 }
