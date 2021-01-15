@@ -50,10 +50,6 @@ button {
     font-size: 18px;
 }
 
-#text-section {
-    padding-bottom: 20px;
-}
-
 .toast {
     position: fixed;
     z-index: 1000;
@@ -92,4 +88,16 @@ button {
 
 #current-drawing-section.your-draw {
     color: red;
+}
+
+nav > ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    margin-top: 20px;
+}
+
+nav > ul > li {
+    display: inline-block;
+    margin-right: 20px;
 }

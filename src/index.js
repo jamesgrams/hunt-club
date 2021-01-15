@@ -25,6 +25,12 @@ const TOKEN_KEY = process.env.TOKEN_KEY;
 const TOKEN_COOKIE = "hunt-club-token";
 const ID_COOKIE = "hunt-club-id";
 const TIME_TO_PICK = 1000 * 30; // 30 seconds
+const HOG_SEASON_END = 1; // feb - end and start are both inclusive
+const TURKEY_SEASON_START = 2;
+const TURKEY_SEASON_END = 4;
+const OFF_SEASON_START = 5;
+const OFF_SEASON_END = 7;
+const DEER_SEASON_START = 8;
 
 const ERROR_MESSAGES = {
     someoneElsePunchedIn: "Someone else is already at that location",
@@ -39,7 +45,8 @@ const ERROR_MESSAGES = {
     notYourTurn: "It's not your turn to draw",
     drawProcessing: "The current draw order is being determined, please wait a little bit",
     notBordering: "Please ensure you choose neighboring sites",
-    chainBroken: "Please ensure all your sites will remain neighbors"
+    chainBroken: "Please ensure all your sites will remain neighbors",
+    drawNotHappening: "No draw is currently happening"
 }
 
 let connection;
@@ -48,12 +55,14 @@ let drawIndex = null; // entrant currently on
 let drawTimeout;
 let drawHappening = false;
 let drawLock = false; // use drawing for methods and draw for variables typically
+let drawChecksForUser = 0;
 let maxPlaces = 0;
 // Rule 7 - Deer Season vs. Turkey Season vs. Small Game Season = https://7e84de4f-1182-4832-a9d7-e247c41177b7.filesusr.com/ugd/b992ec_79544ec907c041d7af890d5eb5702431.pdf
 let month = new Date().getMonth();
-if( month <= 1 ) maxPlaces = 4; // Jan and Feb
-else if( month >= 2 && month <= 4 ) maxPlaces = 2; // March - May
-else if( month >= 8 ) maxPlaces = 1; // September+
+if( month <= HOG_SEASON_END ) maxPlaces = 4; // Jan and Feb
+else if( month >= TURKEY_SEASON_START && month <= TURKEY_SEASON_END ) maxPlaces = 2; // March - May
+if( month >= OFF_SEASON_START && month <= OFF_SEASON_END ) maxPlaces = 4; // June - August
+else if( month >= DEER_SEASON_START ) maxPlaces = 1; // September+
 
 // Setup app
 const app = express();
@@ -227,6 +236,42 @@ app.post("/drawing", async function(request, response) {
     response.end( JSON.stringify(obj) );
 });
 
+// Skip
+app.post("/skip", async function(request, response) {
+    let token = request.cookies[TOKEN_COOKIE];
+    let code = HTTP_OK;
+    let obj = {};
+    try {
+        let user = await validateToken(token);
+        try {
+            await skip( user.id );
+            obj = Object.assign( obj, {
+                status: SUCCESS
+            });
+        }
+        catch(err) {
+            code = HTTP_BAD;
+            if(err.message) console.log(err);
+            obj = {
+                status: FAILURE,
+                message: err.message || err
+            }
+        }
+    }
+    catch(err) {
+        code = HTTP_UNAUTHORIZED;
+        if(err.message) console.log(err);
+        obj = {
+            status: FAILURE,
+            message: err.message || err
+        }
+    }
+
+    response.set({ 'content-type':  JSON_ENCODING });
+    response.writeHead(code);
+    response.end( JSON.stringify(obj) );
+});
+
 main();
 
 // Functions
@@ -275,7 +320,7 @@ async function check(locationId, userId, force) {
     // Make sure we're not punched in anywhere else
     [rows, fields] = await connection.execute("SELECT location_id, count(1) AS count FROM checks WHERE user_id = ? AND location_id != ? GROUP BY location_id HAVING MOD(count, 2) = 1", [userId, locationId]);
     if( rows.length >= maxPlaces ) return Promise.reject(ERROR_MESSAGES.signedInSomewhereElse);
-    else if( maxPlaces > 1 && rows.length ) {
+    else if( maxPlaces > 1 && rows.length && !force ) {
         // have to make sure the place that we want borders the places that we are signed into - it just needs to border one
         let bordersOne = false;
         for( let row of rows ) {
@@ -317,10 +362,32 @@ async function check(locationId, userId, force) {
         if( status.drawOrder === null || status.drawOrder !== drawIndex ) {
             return Promise.reject(ERROR_MESSAGES.notYourTurn);
         }
+
+        [rows, fields] = await connection.execute("SELECT count(1) AS count FROM checks WHERE user_id = ? AND location_id = ? ORDER BY created DESC", [userId, locationId]);
+        // We're checking out
+        if( rows[0].count % 2 === 1 ) {
+            drawChecksForUser--; // perhaps an accident
+        }
+        else {
+            drawChecksForUser++;
+        }
     }
 
     await connection.execute("INSERT INTO checks(location_id,user_id) VALUES (?,?)", [locationId,userId]);
-    if( !force && drawHappening ) advancePick();
+    if( !force && drawHappening && drawChecksForUser === maxPlaces ) advancePick();
+    return Promise.resolve();
+}
+
+/**
+ * Skip your spot in the draw.
+ */
+async function skip( userId ) {
+    if( !drawHappening ) return Promise.reject(ERROR_MESSAGES.drawNotHappening);
+    let status = await currentDrawingStatus( userId );
+    if( status.drawOrder === null || status.drawOrder !== drawIndex ) {
+        return Promise.reject(ERROR_MESSAGES.notYourTurn);
+    }
+    advancePick();
     return Promise.resolve();
 }
 
@@ -456,6 +523,7 @@ function advancePick() {
     clearTimeout( drawTimeout );
     if( drawIndex === null ) drawIndex = 0;
     else drawIndex ++;
+    drawChecksForUser = 0;
 
     // end of draw
     if( drawIndex === drawEntrants.length ) {
@@ -562,7 +630,9 @@ function startDrawAtRightTime() {
     }
     setTimeout( () => {
         console.log("starting draw");
-        performDrawing();
+        // we only do a drawing in turkey season or deer season
+        let m = new Date().getMonth();
+        if( m >= TURKEY_SEASON_START && m <= TURKEY_SEASON_END && m >= DEER_SEASON_START ) performDrawing();
         setTimeout( startDrawAtRightTime, 1000 ); // wait a second just to be safe that we don't double send.
     }, millisTilSend);
 }

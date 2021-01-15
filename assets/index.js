@@ -22,7 +22,6 @@ window.addEventListener('load', function() {
  * Setup the drawing section.
  */
 function setupDrawing() {
-    // TODO - disable?
     document.querySelectorAll("#enter-next, #exit-next").forEach( function(el) {
         el.onclick = function() {
             makeRequest("POST", "/drawing", {}, function(text) {
@@ -31,6 +30,13 @@ function setupDrawing() {
             }, errorToast);
         }
     });
+    
+    // skip button
+    document.querySelector("#skip").onclick = function() {
+        makeRequest("POST", "/skip", {}, function() {
+            createToast("Skipped spot");
+        }, errorToast);
+    }
 }
 
 /**
@@ -117,6 +123,7 @@ function addDeveloperHelper() {
         // top left - you click on the center
         var box = [(e.offsetX-radius)/width,(e.offsetY-radius)/height];
         console.log(box);
+        console.log(e.offsetX, e.offsetY, width, height);
     }
 }
 
@@ -151,13 +158,20 @@ function addDraws() {
     var currentDrawingPlace = currentDrawingSection.querySelector("#current-drawing-place");
     var currentDrawingOn = currentDrawingSection.querySelector("#current-drawing-on");
     var currentDrawingTimeLeft = currentDrawingSection.querySelector("#current-drawing-time-left");
+    var skip = currentDrawingSection.querySelector("#skip");
     if( currentDrawStatus.drawHappening ) {
         currentDrawingPlace.innerText = (currentDrawStatus.drawOrder !== null) ? (currentDrawStatus.drawOrder + 1) : "Not Entered";
         currentDrawingOn.innerText = currentDrawStatus.drawOn + 1;
         currentDrawingTimeLeft.innerText = currentDrawStatus.drawSecondsLeft;
         currentDrawingSection.classList.remove("hidden");
-        if( currentDrawStatus.drawOn === currentDrawStatus.drawOrder ) currentDrawingSection.classList.add("your-draw");
-        else currentDrawingSection.classList.remove("your-draw");
+        if( currentDrawStatus.drawOn === currentDrawStatus.drawOrder ) {
+            currentDrawingSection.classList.add("your-draw");
+            skip.classList.remove("hidden");
+        }
+        else {
+            currentDrawingSection.classList.remove("your-draw");
+            skip.classList.add("hidden");
+        }
     }
     else {
         currentDrawingPlace.innerText = "";
@@ -165,6 +179,7 @@ function addDraws() {
         currentDrawingTimeLeft.innerText = "";
         currentDrawingSection.classList.add("hidden");
         currentDrawingSection.classList.remove("your-draw");
+        skip.classList.add("hidden");
     }
 
     var enterNext = document.querySelector("#enter-next");
