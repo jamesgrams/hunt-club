@@ -28,7 +28,7 @@ const TIME_TO_PICK = 1000 * 30; // 30 seconds
 
 const ERROR_MESSAGES = {
     someoneElsePunchedIn: "Someone else is already at that location",
-    signedInSomewhereElse: "You are signed in somewhere else",
+    signedInSomewhereElse: "You are signed in to the maximun number of locations",
     pleaseProvideAnEmailAndPassword: "Please provide an email and password",
     accountDoesNotExist: "Account does not exist",
     invalidToken: "Invalid session - please log in again",
@@ -37,7 +37,9 @@ const ERROR_MESSAGES = {
     noLocationOrUser: "A location or user is missing",
     mapNotFound: "Map not found",
     notYourTurn: "It's not your turn to draw",
-    drawProcessing: "The current draw order is being determined, please wait a little bit"
+    drawProcessing: "The current draw order is being determined, please wait a little bit",
+    notBordering: "Please ensure you choose neighboring sites",
+    chainBroken: "Please ensure all your sites will remain neighbors"
 }
 
 let connection;
@@ -45,7 +47,13 @@ let drawEntrants = [];
 let drawIndex = null; // entrant currently on
 let drawTimeout;
 let drawHappening = false;
-let drawLock = false;
+let drawLock = false; // use drawing for methods and draw for variables typically
+let maxPlaces = 0;
+// Rule 7 - Deer Season vs. Turkey Season vs. Small Game Season = https://7e84de4f-1182-4832-a9d7-e247c41177b7.filesusr.com/ugd/b992ec_79544ec907c041d7af890d5eb5702431.pdf
+let month = new Date().getMonth();
+if( month <= 1 ) maxPlaces = 4; // Jan and Feb
+else if( month >= 2 && month <= 4 ) maxPlaces = 2; // March - May
+else if( month >= 8 ) maxPlaces = 1; // September+
 
 // Setup app
 const app = express();
@@ -55,7 +63,7 @@ app.use( cookieParser() );
 // Endpoints
 app.use("/assets/", express.static("assets"));
 
-// Get the current status for a map
+// Get the current status for a map and draw
 app.get("/status", async function(request, response) {
     let token = request.cookies[TOKEN_COOKIE];
     let obj = {};
@@ -266,7 +274,42 @@ async function check(locationId, userId, force) {
     }
     // Make sure we're not punched in anywhere else
     [rows, fields] = await connection.execute("SELECT location_id, count(1) AS count FROM checks WHERE user_id = ? AND location_id != ? GROUP BY location_id HAVING MOD(count, 2) = 1", [userId, locationId]);
-    if( rows.length ) return Promise.reject(ERROR_MESSAGES.signedInSomewhereElse);
+    if( rows.length >= maxPlaces ) return Promise.reject(ERROR_MESSAGES.signedInSomewhereElse);
+    else if( maxPlaces > 1 && rows.length ) {
+        // have to make sure the place that we want borders the places that we are signed into - it just needs to border one
+        let bordersOne = false;
+        for( let row of rows ) {
+            let [subrows, subfields] = await connection.execute("SELECT id FROM borders where (location_id_a = ? OR location_id_b = ?) AND (location_id_a = ? OR location_id_b = ?)", [locationId, locationId, row.location_id, row.location_id]);
+            if( subrows.length ) {
+                bordersOne = true;
+                break;
+            }
+        }
+        if( !bordersOne ) return Promise.reject(ERROR_MESSAGES.notBordering);
+        // we also have to make sure that when signing out, the remaining rows will still all border each other.
+        // we'll start at the first location, then look at what it borders. If it borders one we need (i.e. one of the remaining rows),
+        // we'll mark it as visited and repeat the process with that location.
+        // The maximum number of requests is neededLocations.length so that will be 3 when we have a max of four locations (as one will be the location we are punching)
+        let borderingLocations = [rows[0].location_id];
+        let neededLocations = rows.map(el => el.location_id);
+        let maxDepth = rows.length - 1;
+        let findBorders = async (current, depth) => {
+            let [subrows, subfields] = await connection.execute("SELECT location_id_a, location_id_b FROM borders where (location_id_a = ? OR location_id_b = ?)", [current, current]);
+            subrows = subrows.filter( subrow => { // filter the rows to be only the ones we need
+                subrow.location_id = subrow.location_id_a === current ? subrow.location_id_b : subrow.location_id_a; // get the "other" location id
+                return borderingLocations.indexOf(subrow.location_id) === -1
+                    && neededLocations.indexOf(subrow.location_id) !== -1
+            } );
+            for( let subrow of subrows ) {
+                if( borderingLocations.indexOf(subrow.location_id) === -1 ) { // even though we check above, the previous subrow's child search may have added it
+                    borderingLocations.push( subrow.location_id );
+                    if( depth < maxDepth ) await findBorders( subrow.location_id, depth+1 );
+                }
+            }
+        };
+        if( borderingLocations.length !== neededLocations.length ) await findBorders(borderingLocations[0], 0); // run the findBorders function if we have to
+        if( borderingLocations.length !== neededLocations.length ) return Promise.reject(ERROR_MESSAGES.chainBroken);
+    }
 
     // Drawing check
     if( !force && drawHappening ) {
