@@ -373,6 +373,11 @@ async function check(locationId, userId, force) {
         }
     }
 
+    // Deer season check - 2 punches allowed per day
+    // integer divide by 2 to get check ins per location
+    //[rows, fields] = await connection.execute("SELECT count(count) AS count FROM (SELECT location_id, count(1) DIV 2 AS count FROM checks WHERE user_id = ? GROUP BY location_id) AS checkins_by_location", [userId]);
+
+
     await connection.execute("INSERT INTO checks(location_id,user_id) VALUES (?,?)", [locationId,userId]);
     if( !force && drawHappening && drawChecksForUser === maxPlaces ) advancePick();
     return Promise.resolve();
