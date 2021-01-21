@@ -5,6 +5,7 @@ var TOKEN_COOKIE = "hunt-club-token";
 
 var circleDiameterPercent;
 var statusTimeout;
+var statusFetchCount = 0;
 var mapId;
 var locations = {};
 var currentDrawStatus = {};
@@ -26,7 +27,7 @@ function setupDrawing() {
         el.onclick = function() {
             makeRequest("POST", "/drawing", {}, function(text) {
                 createToast( el.getAttribute("id") === "enter-next" ? "Drawing entered" : " Drawing exited" );
-                // Changes made in heartbeat status
+                fetchStatus();
             }, errorToast);
         }
     });
@@ -131,22 +132,34 @@ function addDeveloperHelper() {
  * Update the current status.
  */
 function fetchStatus() {
+    clearTimeout(statusTimeout); // if directly called
+    statusFetchCount++;
+    var myCallStatusFetchCount = statusFetchCount;
     if( !getCookie(TOKEN_COOKIE) ) { // don't make unecessary requests
-        setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
+        statusTimeout = setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
         return;
     }
     makeRequest("GET", "/status", { mapId: mapId }, function(text) {
+        if(statusFetchCount !== myCallStatusFetchCount) return; // this is when we fetch after punching, if we get the results back for an interval while waiting for a punch fetch, ignore the interval, since it was called before the punch
         var json = JSON.parse(text);
+        var prevLocations = locations;
         locations = json.locations;
+        var prevCurrentDrawStatus = currentDrawStatus;
+        var prevNextDrawStatus = nextDrawStatus;
         currentDrawStatus = json.currentDrawStatus;
         nextDrawStatus = json.nextDrawStatus;
-        setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
+        statusTimeout = setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
         window.onresize = addBoxes;
-        addBoxes(); // redraw
-        addDraws();
+        if( JSON.stringify(locations) !== JSON.stringify(prevLocations) ) {
+            addBoxes(); // redraw
+        }
+        if( JSON.stringify(prevCurrentDrawStatus) !== JSON.stringify(currentDrawStatus) || JSON.stringify(prevNextDrawStatus) !== JSON.stringify(nextDrawStatus) ) {
+            addDraws();
+        }
     }, function(err) {
+        if(statusFetchCount !== myCallStatusFetchCount) return;
         console.log(err);
-        setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
+        statusTimeout = setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
     });
 }
 
@@ -264,6 +277,7 @@ function createPopout(location, boxElement) {
             locationId: location.location.id
         }, function(text) {
             createToast("Punch Successful");
+            fetchStatus(); // only fetch if we aren't already
         }, errorToast);
     }
     popout.appendChild(punch);
