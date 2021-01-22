@@ -15,6 +15,7 @@ const FAILURE = "failure";
 const HTTP_OK = 200;
 const HTTP_BAD = 422;
 const HTTP_UNAUTHORIZED = 401;
+const HTTP_REDIRECT = 301;
 // be sure to set the TZ environment variable as well
 
 const CRYPTO_KEY_LEN = 128;
@@ -74,6 +75,14 @@ else if( month >= DEER_SEASON_START ) maxPlaces = 1; // September+
 const app = express();
 app.use( express.json() );
 app.use( cookieParser() );
+// Redirect the app
+app.use((req,res,next) => {
+    // HTTPs
+    if (!req.secure && req.get('x-forwarded-proto') !== 'https' && process.env.NODE_ENV !== "development") {
+        return res.redirect(HTTP_REDIRECT, 'https://' + req.get('host') + req.url);
+    }
+    next();
+});
 
 // Endpoints
 app.use("/assets/", express.static("assets"));

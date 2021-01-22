@@ -15,18 +15,19 @@ Hunt Club will let a user log in, sign in and out from locations, and enter draw
 4. `npm install`
 5. Make sure you have a connection to a MySQL database. Run the contents of `sql/init.sql` on that database and optionally `sql/main.sql` as well.
 6. Set environment variables or create a `.env` file (in this repo's directory) for:
-    a. `MYSQL_HOST`
-    b. `MYSQL_PORT`
-    c. `MYSQL_USER`
-    d. `MYSQL_DATABASE`
-    e. `MYSQL_PASSWORD`
-    f. `TOKEN KEY` - A random string
-    g. `TZ` - The timezone (e.g. America/New_York) - this is very important as there are specific times the program operates at such as drawings
-    h. `MAILER_HOST`
-    i. `MAILER_EMAIL`
-    f. `MAILER_PORT`
-    g. `MAILER_PASSWORD`,
-    i. `ADMIN_EMAIL`
+    1. `MYSQL_HOST`
+    2. `MYSQL_PORT`
+    3. `MYSQL_USER`
+    4. `MYSQL_DATABASE`
+    5. `MYSQL_PASSWORD`
+    6. `TOKEN KEY` - A random string
+    7. `TZ` - The timezone (e.g. America/New_York) - this is very important as there are specific times the program operates at such as drawings
+    8. `MAILER_HOST`
+    9. `MAILER_EMAIL`
+    10. `MAILER_PORT`
+    11. `MAILER_PASSWORD`,
+    12. `ADMIN_EMAIL`
+    13. `NODE_ENV` - (Set to development to avoid https redirect)
 
 ## Developer Tips
 1. When loading in a map, try to make it similar size to the other ones. You should also calculate the circle diameter in percentage of the total map with for the clickable circles.
