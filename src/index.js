@@ -474,7 +474,7 @@ async function getChat() {
     let results = rows.map( row => {
         return {
             user: row.user_name,
-            created: row.created,
+            created: row.created.toLocaleString("en-US", {timeZone: "UTC"}), // we are operating in EST, so we don't want the date to change -- timezone UTC
             content: row.content
         }
     });

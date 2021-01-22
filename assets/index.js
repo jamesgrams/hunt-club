@@ -247,7 +247,7 @@ function addChat() {
 
         var timeElement = document.createElement("div");
         timeElement.classList.add("message-time");
-        timeElement.innerText = new Date(chat[i].created).toLocaleString();
+        timeElement.innerText = chat[i].created;
         messageElement.appendChild(timeElement);
 
         newChatMessages.appendChild(messageElement);
