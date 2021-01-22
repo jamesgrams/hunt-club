@@ -2,7 +2,7 @@ CREATE TABLE users (
     id int unsigned not null auto_increment,
     created timestamp default now(),
     modified timestamp default now() on update now() not null,
-    email varchar(255) not null,
+    email varchar(255) not null unique,
     hash varchar(256) not null,
     salt varchar(128) not null,
     name varchar(200) not null,
