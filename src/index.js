@@ -644,6 +644,8 @@ async function validateToken( token ) {
     if( token ) {
         try {
             let result = jwt.verify( token, TOKEN_KEY, TOKEN_OPTIONS );
+            let [rows, fields] = await connection.execute("SELECT id FROM users WHERE id = ?", [result.id]);
+            if( !rows.length ) return Promise.reject(ERROR_MESSAGES.invalidToken);
             return Promise.resolve(result);
         }
         catch(err) {
