@@ -118,7 +118,7 @@ nav > ul > li {
 }
 
 #chat-messages {
-    max-height: 350px;
+    height: 350px;
     overflow-y: scroll;
 }
 
