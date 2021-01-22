@@ -42,11 +42,11 @@ button {
     cursor: pointer;
 }
 
-.hidden {
+.hidden, .hidden2 {
     display: none;
 }
 
-#text-section, #text-section input, #text-section button, .popout button {
+#text-section, #text-section input, #text-section button, .popout button, #chat button, #chat-message {
     font-size: 18px;
 }
 
@@ -100,4 +100,50 @@ nav > ul {
 nav > ul > li {
     display: inline-block;
     margin-right: 20px;
+}
+
+#chat {
+    margin-top: 10px;
+}
+
+#chat, #chat-messages, #chat-message {
+    border: 2px solid black;
+    padding: 20px;
+    border-radius: 25px;
+}
+
+#chat-messages, #chat-message {
+    width: calc( 100% - 44px );
+    margin-bottom: 20px;
+}
+
+#chat-messages {
+    max-height: 350px;
+    overflow-y: scroll;
+}
+
+.message {
+    padding: 15px;
+}
+
+.message-user, .message-content {
+    display: inline;
+}
+
+.message-user {
+    font-weight: bold;
+}
+
+.message-user::after {
+    content: ": ";
+}
+
+.message-time {
+    float: right;
+    color: grey;
+    font-size: 75%;
+}
+
+#submit-chat-wrapper {
+    text-align: right;
 }

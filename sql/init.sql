@@ -17,6 +17,9 @@ CREATE TABLE maps (
     name varchar(100) not null,
     image_src varchar(100) not null,
     circle_diameter float(53) not null,
+    center_lat float(53) not null,
+    center_lng float(53) not null,
+    valid_radius float(53) not null,
     constraint pk_maps primary key(id)
 );
 
@@ -52,6 +55,7 @@ CREATE TABLE checks (
     modified timestamp default now() on update now() not null,
     location_id int unsigned not null,
     user_id int unsigned not null,
+    guest varchar(200),
     constraint pk_checks primary key(id),
     constraint fk_checks_users foreign key (user_id) references users(id),
     constraint fk_checks_locations foreign key (location_id) references locations(id)
@@ -66,8 +70,35 @@ CREATE TABLE drawings (
     modified timestamp default now() on update now() not null,
     user_id int unsigned not null,
     draw_order int unsigned,
+    priority boolean,
     constraint pk_drawings primary key(id),
     constraint fk_drawings_users foreign key (user_id) references users(id)
 );
 
 CREATE INDEX idx_drawings_user_id on drawings(user_id);
+
+CREATE TABLE physicals (
+    id int unsigned not null auto_increment,
+    created timestamp default now(),
+    modified timestamp default now() on update now() not null,
+    map_id int unsigned not null,
+    user_id int unsigned not null,
+    constraint pk_physicals primary key(id),
+    constraint fk_physicals_maps foreign key (map_id) references maps(id),
+    constraint fk_physicals_users foreign key (user_id) references users(id)
+);
+
+CREATE INDEX idx_physicals_map_id on physicals(map_id);
+CREATE INDEX idx_phsyicals_user_id on physicals(user_id);
+
+CREATE TABLE messages (
+    id int unsigned not null auto_increment,
+    created timestamp default now(),
+    modified timestamp default now() on update now() not null,
+    content text not null,
+    user_id int unsigned not null,
+    constraint pk_messages primary key(id),
+    constraint fk_messages_users foreign key (user_id) references users(id)
+);
+
+CREATE INDEX idx_messages_user_id on messages(user_id);

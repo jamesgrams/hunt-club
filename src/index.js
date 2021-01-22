@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const cookieParser = require("cookie-parser");
 const minimist = require("minimist");
+const nodemailer = require("nodemailer");
 require('dotenv').config();
 
 const PORT = process.env.PORT || 80;
@@ -12,8 +13,9 @@ const MAX_FETCH_COUNT = 3;
 const SUCCESS = "success";
 const FAILURE = "failure";
 const HTTP_OK = 200;
-const HTTP_BAD = 500;
+const HTTP_BAD = 422;
 const HTTP_UNAUTHORIZED = 401;
+// be sure to set the TZ environment variable as well
 
 const CRYPTO_KEY_LEN = 128;
 const SALT_RANDOM_LEN = 20;
@@ -31,6 +33,7 @@ const TURKEY_SEASON_END = 4;
 const OFF_SEASON_START = 5;
 const OFF_SEASON_END = 7;
 const DEER_SEASON_START = 8;
+const MAX_SIGNINS_DURING_DEER_SEASON = 2;
 
 const ERROR_MESSAGES = {
     someoneElsePunchedIn: "Someone else is already at that location",
@@ -46,7 +49,10 @@ const ERROR_MESSAGES = {
     drawProcessing: "The current draw order is being determined, please wait a little bit",
     notBordering: "Please ensure you choose neighboring sites",
     chainBroken: "Please ensure all your sites will remain neighbors",
-    drawNotHappening: "No draw is currently happening"
+    drawNotHappening: "No draw is currently happening",
+    deerSeasonMaxSignIns: "You can only sign in twice per day during Deer Season",
+    notWithinAnyMap: "You aren't located within any map",
+    noChatMessage: "Please enter a message"
 }
 
 let connection;
@@ -74,180 +80,112 @@ app.use("/assets/", express.static("assets"));
 
 // Get the current status for a map and draw
 app.get("/status", async function(request, response) {
-    let token = request.cookies[TOKEN_COOKIE];
-    let obj = {};
-    let code = HTTP_OK;
-    try {
-        let user = await validateToken(token);
-        try {
-            let locations = await status( request.query.mapId );
-            let currentDrawStatus = await currentDrawingStatus( user.id );
-            let nextDrawStatus = await nextDrawingStatus( user.id );
-            obj = { 
-                locations: locations,
-                currentDrawStatus: currentDrawStatus,
-                nextDrawStatus: nextDrawStatus,
-                status: SUCCESS
-            };
-        }
-        catch(err) {
-            code = HTTP_BAD;
-            if(err.message) console.log(err);
-            obj = {
-                status: FAILURE,
-                message: err.message || err
-            }
-        }
-    }
-    catch(err) {
-        code = HTTP_UNAUTHORIZED;
-        if(err.message) console.log(err);
-        obj = {
-            status: FAILURE,
-            message: err.message || err
-        }
-    }
-    response.set({ 'content-type':  JSON_ENCODING });
-    response.writeHead(code);
-    response.end( JSON.stringify(obj) );
+    await action( request, response, true, async ( request, user ) => {
+        let locations = await status( request.query.mapId );
+        let currentDrawStatus = await currentDrawingStatus( user.id );
+        let nextDrawStatus = await nextDrawingStatus( user.id );
+        let chat = await getChat();
+        return Promise.resolve({ 
+            locations: locations,
+            currentDrawStatus: currentDrawStatus,
+            nextDrawStatus: nextDrawStatus,
+            chat: chat,
+            status: SUCCESS
+        });
+    });
 });
 
 // Check in
 // Node is single-threaded so requests will be run in the order they are sent
 app.post("/check", async function(request, response) {
-    let token = request.cookies[TOKEN_COOKIE];
-    let code = HTTP_OK;
-    let obj = {};
-    try {
-        let user = await validateToken(token);
-        try {
-            await check( request.body.locationId, user.id );
-            obj = Object.assign( obj, {
-                status: SUCCESS
-            });
-        }
-        catch(err) {
-            code = HTTP_BAD;
-            if(err.message) console.log(err);
-            obj = {
-                status: FAILURE,
-                message: err.message || err
-            }
-        }
-    }
-    catch(err) {
-        code = HTTP_UNAUTHORIZED;
-        if(err.message) console.log(err);
-        obj = {
-            status: FAILURE,
-            message: err.message || err
-        }
-    }
-
-    
-    response.set({ 'content-type':  JSON_ENCODING });
-    response.writeHead(code);
-    response.end( JSON.stringify(obj) );
+    await action( request, response, true, async ( request, user ) => {
+        await check( request.body.locationId, user.id, false, request.body.guest );
+        return Promise.resolve({
+            status: SUCCESS
+        });
+    });
 });
 
 // Log in
 app.post("/login", async function(request, response) {
-    let code = HTTP_OK;
-    let obj;
-    try {
+    await action( request, response, false, async ( request, user ) => {
         let loginInfo = await createToken( request.body.email, request.body.password );
         response.cookie( TOKEN_COOKIE, loginInfo.token, { maxAge: TOKEN_EXPIRES_IN_MS } );
         response.cookie( ID_COOKIE, JSON.stringify(loginInfo.id), { maxAge: TOKEN_EXPIRES_IN_MS} );
-        obj = {
+        return Promise.resolve({
             status: SUCCESS,
             loginInfo: loginInfo
-        }
-    }
-    catch(err) {
-        code = HTTP_BAD;
-        if(err.message) console.log(err);
-        obj = {
-            status: FAILURE,
-            message: err.message || err
-        }
-    }
-    response.set({ 'content-type':  JSON_ENCODING });
-    response.writeHead(code);
-    response.end( JSON.stringify(obj) );
+        });
+    } );
 } );
 
 // Get info about a map
 app.get("/map",  async function(request, response) {
-    let obj = {};
-    let code = HTTP_OK;
-    try {
+    await action( request, response, false, async ( request, user ) => {
         obj = await mapInfo( request.query.mapId );
-        obj = { 
+        return Promise.resolve({ 
             map : obj,
             status: SUCCESS
-        };
-    }
-    catch(err) {
-        code = HTTP_BAD;
-        if(err.message) console.log(err);
-        obj = {
-            status: FAILURE,
-            message: err.message || err
-        }
-    }
-    response.set({ 'content-type':  JSON_ENCODING });
-    response.writeHead(code);
-    response.end( JSON.stringify(obj) );
+        });
+    } );
 });
 
 // Drawing
 app.post("/drawing", async function(request, response) {
-    let token = request.cookies[TOKEN_COOKIE];
-    let code = HTTP_OK;
-    let obj = {};
-    try {
-        let user = await validateToken(token);
-        try {
-            await toggleDrawing( user.id );
-            obj = Object.assign( obj, {
-                status: SUCCESS
-            });
-        }
-        catch(err) {
-            code = HTTP_BAD;
-            if(err.message) console.log(err);
-            obj = {
-                status: FAILURE,
-                message: err.message || err
-            }
-        }
-    }
-    catch(err) {
-        code = HTTP_UNAUTHORIZED;
-        if(err.message) console.log(err);
-        obj = {
-            status: FAILURE,
-            message: err.message || err
-        }
-    }
-
-    response.set({ 'content-type':  JSON_ENCODING });
-    response.writeHead(code);
-    response.end( JSON.stringify(obj) );
+    await action( request, response, true, async ( request, user ) => {
+        await toggleDrawing( user.id );
+        return Promise.resolve({
+            status: SUCCESS
+        });
+    } );
 });
 
 // Skip
 app.post("/skip", async function(request, response) {
-    let token = request.cookies[TOKEN_COOKIE];
+    await action( request, response, true, async ( request, user ) => {
+        await skip( user.id );
+        return Promise.resolve({
+            status: SUCCESS
+        });
+    } );
+});
+
+// Check in to a physical location
+app.post("/physical", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        let message = await physical( request.body.lat, request.body.lng, user.id );
+        return Promise.resolve({
+            status: SUCCESS,
+            message: message
+        })
+    } );
+});
+
+// Add a chat message
+app.post("/chat", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        await postChat( user.id, request.body.message );
+        return Promise.resolve({
+            status: SUCCESS
+        })
+    } );
+});
+
+/**
+ * Perform a standard action.
+ * @param {Request} request - The request object.
+ * @param {Response} response - The response object.
+ * @param {boolean} [validateUser] - The token cookie.
+ * @param {Function} successFunction - The function to run on success
+ */
+async function action( request, response, validateUser, successFunction ) {
     let code = HTTP_OK;
     let obj = {};
     try {
-        let user = await validateToken(token);
+        let user;
+        if( validateUser ) user = await validateToken(request.cookies[TOKEN_COOKIE]);
         try {
-            await skip( user.id );
-            obj = Object.assign( obj, {
-                status: SUCCESS
-            });
+            obj = await successFunction( request, user );
         }
         catch(err) {
             code = HTTP_BAD;
@@ -266,11 +204,10 @@ app.post("/skip", async function(request, response) {
             message: err.message || err
         }
     }
-
     response.set({ 'content-type':  JSON_ENCODING });
     response.writeHead(code);
     response.end( JSON.stringify(obj) );
-});
+}
 
 main();
 
@@ -281,7 +218,8 @@ async function main() {
         user: process.env.MYSQL_USER,
         password: process.env.MYSQL_PASSWORD,
         database: process.env.MYSQL_DATABASE,
-        port: process.env.MYSQL_PORT
+        port: process.env.MYSQL_PORT,
+        timezone: new Date().toString().match(/([-\+][0-9]+)\s/)[1].replace(/(\d{2})$/, ":$1").replace(/\+/,"=").replace(/\-/,"+").replace(/=/,"-")
     });
 
     // script can be used to add a user with --email <email> --password <password> --name <name> --phone <phone>
@@ -301,16 +239,18 @@ async function main() {
 
     app.listen(PORT);
     startDrawAtRightTime();
+    startReportAtRightTime();
 }
 
 /**
  * Check in or check out from a location.
  * @param {number} locationId - The id of the location.
  * @param {number} userId - The id of the person punching.
- * @param {boolean} force - Force check out even during a draw.
+ * @param {boolean} [force] - Force check out even during a draw.
+ * @param {string} [guest] - A name for a guest.
  * @returns {Promise} - A resolved promise.
  */
-async function check(locationId, userId, force) {
+async function check(locationId, userId, force, guest) {
     if( !locationId || !userId ) return Promise.reject(ERROR_MESSAGES.noLocationOrUser );
     let [rows, fields] = await connection.execute("SELECT count(1) AS count FROM checks WHERE user_id != ? AND location_id = ? ORDER BY created DESC", [userId, locationId]);
     // Make sure some one else isn't punched in
@@ -375,10 +315,19 @@ async function check(locationId, userId, force) {
 
     // Deer season check - 2 punches allowed per day
     // integer divide by 2 to get check ins per location
-    //[rows, fields] = await connection.execute("SELECT count(count) AS count FROM (SELECT location_id, count(1) DIV 2 AS count FROM checks WHERE user_id = ? GROUP BY location_id) AS checkins_by_location", [userId]);
+    if( !force && month >= DEER_SEASON_START ) {
+        [rows, fields] = await connection.execute("SELECT count(1) AS count FROM checks WHERE user_id = ? AND location_id = ? ORDER BY created DESC", [userId, locationId]);
+        // We're checking in
+        if( rows[0].count % 2 !== 1 ) {
+            [rows, fields] = await connection.execute("SELECT SUM(count) AS count FROM (SELECT location_id, CEIL(count(1)/2) AS count FROM checks WHERE user_id = ? AND DATE(created) = CURDATE() GROUP BY location_id) AS checkins_by_location", [userId]);
+            if( rows[0].count >= MAX_SIGNINS_DURING_DEER_SEASON ) {
+                return Promise.reject(ERROR_MESSAGES.deerSeasonMaxSignIns);
+            }
+        }
+    }
 
-
-    await connection.execute("INSERT INTO checks(location_id,user_id) VALUES (?,?)", [locationId,userId]);
+    if( !guest ) guest = null; // don't bother with blank rows in the db
+    await connection.execute("INSERT INTO checks(location_id,user_id,guest) VALUES (?,?,?)", [locationId,userId,guest]);
     if( !force && drawHappening && drawChecksForUser === maxPlaces ) advancePick();
     return Promise.resolve();
 }
@@ -397,6 +346,76 @@ async function skip( userId ) {
 }
 
 /**
+ * Check into a physical location.
+ * @param {number} lat - The latitude. 
+ * @param {number} lng - The longitude.
+ * @param {string} userId - The id of the user.
+ * @returns {Promise<string>} - A promise containing a descriptive message of where the user checked in. 
+ */
+async function physical( lat, lng, userId ) {
+
+    let [rows, fields] = await connection.execute("SELECT id, name, center_lat, center_lng, valid_radius FROM maps");
+    for( let row of rows ) {
+        let distanceBetween = distance( lat, lng, row.center_lat, row.center_lng );
+        if( distanceBetween <= row.valid_radius ) {
+            await connection.execute("INSERT INTO physicals(map_id, user_id) VALUES (?,?)", [row.id, userId]);
+            return Promise.resolve("Checked into " + row.name);
+        }
+    }
+    return Promise.reject(ERROR_MESSAGES.notWithinAnyMap);
+
+}
+
+/**
+ * Generate a report of who didn't physically check into a location they checked into.
+ */
+async function performViolatorsReport() {
+    // this might get people who sign out the next day as well - perhaps a good thing
+    let [rows, fields] = await connection.execute("SELECT users.id AS user_id, users.name AS user_name, users.email AS user_email, users.phone AS user_phone, locations.id AS location_id, locations.name AS location_name, maps.id AS map_id, maps.name AS map_name FROM users JOIN checks ON users.id = checks.user_id JOIN locations ON checks.location_id = locations.id JOIN maps ON locations.map_id = maps.id LEFT OUTER JOIN physicals ON locations.map_id = physicals.map_id WHERE physicals.id is null AND DATE(checks.created) = CURDATE()");
+    let report = rows.map( row => {
+        return `<tr><td>${row.user_name}</td><td>${row.user_email}</td><td>${row.user_phone}</td><td>${row.map_name}</td><td>${row.location_name}</td></tr>`;
+    }).join("");
+    if( !rows.length ) report = "No violators today.";
+    else report = `<table border="1" cellpadding="5"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Map</th><th>Location</th></tr></thead><tbody>${report}</tbody></table>`;
+    report = `<h1>Violators Report</h1>${report}`;
+
+    let smtp = nodemailer.createTransport({
+        host: process.env.MAILER_HOST,
+        port: process.env.MAILER_PORT,
+        auth: {
+            user: process.env.MAILER_EMAIL,
+            pass: process.env.MAILER_PASSWORD
+        }
+    });
+    smtp.sendMail({
+        from: '"Hunt Club Mail" <huntclubmail@gmail.com>',
+        to: process.env.ADMIN_EMAIL,
+        subject: "Violators Report - " + new Date().toLocaleDateString(),
+        html: report
+    });
+    console.log("mail sent");
+}
+
+/**
+ * Get the distance between two coordinates in miles.
+ * https://stackoverflow.com/questions/27928/calculate-distance-between-two-latitude-longitude-points-haversine-formula
+ * @param {number} lat1 - The first latitude. 
+ * @param {number} lon1 - The first longitude.
+ * @param {number} lat2 - The second latitude.
+ * @param {number} lon2 - The second longitude.
+ * @returns {number} The distance in miles.
+ */
+function distance(lat1, lon1, lat2, lon2) {
+    let p = 0.017453292519943295;    // Math.PI / 180
+    let c = Math.cos;
+    let a = 0.5 - c((lat2 - lat1) * p)/2 + 
+            c(lat1 * p) * c(lat2 * p) * 
+            (1 - c((lon2 - lon1) * p))/2;
+  
+    return 7918 * Math.asin(Math.sqrt(a)); // 2 * R; R = 3959 m (radius of earth in miles)
+  }
+
+/**
  * Check the current status of the magnet board.
  * @param {number} mapId - The ID of the map.
  * @returns {Promise<Object>} - A resolved promise containing an object with locations as keys and people as values.
@@ -404,14 +423,15 @@ async function skip( userId ) {
 async function status( mapId ) {
     if( !mapId ) return Promise.reject(ERROR_MESSAGES.noMapSpecified);
     // counts on id being in order of when created
-    let [rows, fields] = await connection.execute("SELECT users.id as user_id, locations.id as location_id, users.name as user_name, users.phone as user_phone, locations.name as location, x, y FROM (SELECT max(id) as id, count(1) as count FROM checks group by location_id having MOD(count, 2) = 1) AS ids JOIN checks on checks.id = ids.id JOIN users ON checks.user_id = users.id RIGHT OUTER JOIN locations ON checks.location_id = locations.id WHERE locations.map_id = ?", [mapId]);
+    let [rows, fields] = await connection.execute("SELECT users.id as user_id, locations.id as location_id, users.name as user_name, users.phone as user_phone, locations.name as location, x, y, guest FROM (SELECT max(id) as id, count(1) as count FROM checks group by location_id having MOD(count, 2) = 1) AS ids JOIN checks on checks.id = ids.id JOIN users ON checks.user_id = users.id RIGHT OUTER JOIN locations ON checks.location_id = locations.id WHERE locations.map_id = ?", [mapId]);
     let locations = {};
     for( let row of rows ) {
         locations[row.location_id] = {
             user: {
                 id: row.user_id,
                 name: row.user_name,
-                phone: row.user_phone
+                phone: row.user_phone,
+                guest: row.guest
             },
             location: {
                 id: row.location_id,
@@ -434,6 +454,33 @@ async function mapInfo( mapId ) {
     let [rows, fields] = await connection.execute("SELECT name, image_src, circle_diameter FROM maps WHERE id = ?", [mapId]);
     if( !rows.length ) return Promise.reject(ERROR_MESSAGES.mapNotFound);
     return Promise.resolve(rows[0]);
+}
+
+/**
+ * Get the past 300 messages from chat.
+ * @returns {Promise<Array>} A promise containing an array of objects with chat info.
+ */
+async function getChat() {
+    let [rows, fields] = await connection.execute("SELECT users.name AS user_name, messages.created AS created, content FROM messages JOIN users ON messages.user_id = users.id ORDER BY messages.created ASC LIMIT 300");
+    let results = rows.map( row => {
+        return {
+            user: row.user_name,
+            created: row.created,
+            content: row.content
+        }
+    });
+    return Promise.resolve(results);
+}
+
+/**
+ * Post a message to chat.
+ * @param {string} userId - The user ID.
+ * @param {string} message - The message to post. 
+ */
+async function postChat( userId, message ) {
+    if( !message ) return Promise.reject(ERROR_MESSAGES.noChatMessage);
+    let [rows, fields] = await connection.execute("INSERT INTO messages(user_id, content) VALUES (?,?)", [userId, message]);
+    return Promise.resolve();
 }
 
 /**
@@ -512,8 +559,10 @@ async function performDrawing() {
             }
         }
     }
-    [rows, fields] = await connection.execute("SELECT id, user_id FROM drawings WHERE draw_order is null");
-    drawEntrants = shuffle(rows);
+    [rows, fields] = await connection.execute("SELECT id, user_id, priority FROM drawings WHERE draw_order is null");
+    let priorityRows = shuffle(rows.filter( row => row.priority ));
+    let normalRows = shuffle(rows.filter( row => !row.priority ));
+    drawEntrants = [...priorityRows, ...normalRows];
     for( let i=0; i<drawEntrants.length; i++ ) {
         await connection.execute("UPDATE drawings SET draw_order = ? WHERE id = ?", [i, drawEntrants[i].id]); // this will be for records and to mark draw enterings as complete, but the draw will take place using the in memory drawingEntrants array
     }
@@ -639,5 +688,23 @@ function startDrawAtRightTime() {
         let m = new Date().getMonth();
         if( m >= TURKEY_SEASON_START && m <= TURKEY_SEASON_END && m >= DEER_SEASON_START ) performDrawing();
         setTimeout( startDrawAtRightTime, 1000 ); // wait a second just to be safe that we don't double send.
+    }, millisTilSend);
+}
+
+/**
+ * Send Violators report at 10pm each day.
+ */
+function startReportAtRightTime() {
+    let now = new Date();
+    // send at 5am
+    // be sure TZ is set properly in heroku's environment variables - we are on eastern time, so that's when our sign up is
+    let millisTilSend = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 0, 0, 0) - now;
+    if (millisTilSend < 0) {
+        millisTilSend += 86400000; // it's after 10pm, try 10pm tomorrow.
+    }
+    setTimeout( () => {
+        console.log("starting report");
+        performViolatorsReport();
+        setTimeout( startReportAtRightTime, 1000 ); // wait a second just to be safe that we don't double send.
     }, millisTilSend);
 }

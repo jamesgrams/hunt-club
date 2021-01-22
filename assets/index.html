@@ -14,16 +14,24 @@
             <div id="text-section">
                 <form id="login-section">
                     <label for="email">
-                        Email: <input name="email" id="email"/>
+                        Email: <input name="email" id="email" autocomplete="email"/>
                     </label>
                     <label for="password">
-                        Password: <input name="password" id="password" type="password"/>
+                        Password: <input name="password" id="password" type="password" autocomplete="current-password"/>
                     </label>
                     <button id="login">Login</button>
                 </form>
                 <div id="logout-section" class="hidden">
                     Welcome, <span id="user-name"></span>
                     <button id="logout">Logout</button>
+                    <div id="guest-section">
+                        <label for="guest">
+                            Guest: <input name="guest" id="guest" type="guest"/>
+                        </label>
+                    </div>
+                    <div id="physical-section">
+                        <button id="physical">Location Check-In</button>
+                    </div>
                     <div id="drawing-section">
                         <button id="enter-next">Enter Next Draw</button>
                         <button id="exit-next" class="hidden">Exit Next Draw</button>
@@ -42,10 +50,22 @@
                         <li><a href="?map=4">White Oak Creek</a></li>
                         <li><a href="?map=5">Horse Branch Creek</a></li>
                         <li><a href="?map=1">Bull Skin Creek</a></li>
+                        <li><a href="?map=chat">Chat</a></li>
                     </ul>
                 </nav>
             </div>
             <div id="map"></div>
+            <div id="chat" class="hidden hidden2">
+                <div id="chat-messages"></div>
+                <form>
+                    <label for="chat-message">
+                        <input type="text" id="chat-message" name="chat-message"/>
+                    </label>
+                    <div id="submit-chat-wrapper">
+                        <button id="submit-chat">Send</button>
+                    </div>
+                </form>
+            </div>
         </main>
         <script src="index.js"></script>
     </body>

@@ -7,6 +7,7 @@ var circleDiameterPercent;
 var statusTimeout;
 var statusFetchCount = 0;
 var mapId;
+var chat = [];
 var locations = {};
 var currentDrawStatus = {};
 var nextDrawStatus = {};
@@ -16,8 +17,45 @@ window.addEventListener('load', function() {
     loadMap();
     setupLogin();
     setupDrawing();
+    setupPhysical();
+    setupChat();
 
 });
+
+/**
+ * Setup the chat.
+ */
+function setupChat() {
+    document.querySelector("#submit-chat").onclick = function(e) {
+        e.preventDefault();
+        var chatMessage = document.querySelector("#chat-message");
+        if( !chatMessage.value ) return;
+        makeRequest("POST", "/chat", {
+            message: chatMessage.value
+        }, function() {}, errorToast);
+        chatMessage.value = "";
+    }
+}
+
+/**
+ * Setup the physical check in.
+ */
+function setupPhysical() {
+    document.querySelector("#physical").onclick = function() {
+        if( !navigator.geolocation ) createToast("Your device doesn't support geolocation");
+        else {
+            navigator.geolocation.getCurrentPosition( function(position) {
+                makeRequest("POST", "/physical", { lat: position.coords.latitude, lng: position.coords.longitude }, 
+                function(responseText) {
+                    createToast( JSON.parse(responseText).message );
+                }, errorToast);
+            }, function() {
+                createToast("Could not fetch location");
+            })
+        }
+        //makeRequest("POST", "/physical")
+    }
+}
 
 /**
  * Setup the drawing section.
@@ -49,9 +87,15 @@ function setupLogin() {
     if( !idCookie || !tokenCookie ) {
         deleteCookie(ID_COOKIE);
         deleteCookie(TOKEN_COOKIE);
+        chat = [];
+        locations = {};
+        currentDrawStatus = {};
+        nextDrawStatus = {};
         document.querySelector("#logout-section").classList.add("hidden");
+        document.querySelector("#chat").classList.add("hidden");
         document.querySelector("#login-section").classList.remove("hidden");
         document.querySelector("#user-name").innerText = "";
+        document.querySelector("#chat-messages").innerText = "";
         document.querySelectorAll(".box").forEach( function(el) {
             el.parentElement.removeChild(el);
         });
@@ -59,6 +103,7 @@ function setupLogin() {
     else {
         document.querySelector("#login-section").classList.add("hidden");
         document.querySelector("#logout-section").classList.remove("hidden");
+        document.querySelector("#chat").classList.remove("hidden");
         var info = JSON.parse(decodeURIComponent(idCookie));
         document.querySelector("#user-name").innerText = info.name;
     }
@@ -93,6 +138,15 @@ function setupLogin() {
 function loadMap() {
     var url = new URL(window.location.href);
     mapId = url.searchParams.get("map");
+    if( mapId === "chat" ) {
+        document.querySelector("#chat").classList.remove("hidden2");
+        var mapName = "Chat";
+        document.title = mapName + ": " + document.title;
+        var h1 = document.querySelector("h1");
+        h1.innerText = mapName + ": " + h1.innerText;
+        fetchStatus();
+        return;
+    }
     makeRequest("GET", "/map", { mapId: mapId }, function(text) {
         var json = JSON.parse(text);
         circleDiameterPercent = json.map.circle_diameter;
@@ -148,6 +202,8 @@ function fetchStatus() {
         var prevNextDrawStatus = nextDrawStatus;
         currentDrawStatus = json.currentDrawStatus;
         nextDrawStatus = json.nextDrawStatus;
+        var prevChat = chat;
+        chat = json.chat;
         statusTimeout = setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
         window.onresize = addBoxes;
         if( JSON.stringify(locations) !== JSON.stringify(prevLocations) ) {
@@ -156,11 +212,48 @@ function fetchStatus() {
         if( JSON.stringify(prevCurrentDrawStatus) !== JSON.stringify(currentDrawStatus) || JSON.stringify(prevNextDrawStatus) !== JSON.stringify(nextDrawStatus) ) {
             addDraws();
         }
+        if( JSON.stringify(chat) !== JSON.stringify(prevChat) ) {
+            addChat();
+        }
     }, function(err) {
         if(statusFetchCount !== myCallStatusFetchCount) return;
         console.log(err);
         statusTimeout = setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
     });
+}
+
+/**
+ * Add chat information.
+ */
+function addChat() {
+    var chatMessages = document.querySelector("#chat-messages");
+    var prevScrollTop = chatMessages.scrollTop;
+    var atBottom = chatMessages.scrollTop === chatMessages.scrollHeight - chatMessages.clientHeight;
+    var newChatMessages = document.createElement("div");
+    newChatMessages.setAttribute("id", "chat-messages");
+    for( var i=0; i<chat.length; i++ ) {
+        var messageElement = document.createElement("div");
+        messageElement.classList.add("message");
+
+        var usernameElement = document.createElement("div");
+        usernameElement.classList.add("message-user");
+        usernameElement.innerText = chat[i].user;
+        messageElement.appendChild(usernameElement);
+
+        var contentElement = document.createElement("div");
+        contentElement.classList.add("message-content");
+        contentElement.innerText = chat[i].content; // innerText is important for XSS
+        messageElement.appendChild(contentElement);
+
+        var timeElement = document.createElement("div");
+        timeElement.classList.add("message-time");
+        timeElement.innerText = new Date(chat[i].created).toLocaleString();
+        messageElement.appendChild(timeElement);
+
+        newChatMessages.appendChild(messageElement);
+    }
+    chatMessages.replaceWith(newChatMessages);
+    newChatMessages.scrollTo(0, atBottom ? newChatMessages.scrollHeight : prevScrollTop );
 }
 
 /**
@@ -263,6 +356,7 @@ function createPopout(location, boxElement) {
         var popoutName = document.createElement("div");
         popoutName.classList.add("popout-name");
         popoutName.innerText = location.user.name;
+        if( location.user.guest ) popoutName.innerText += " & " + location.user.guest;
         popout.appendChild(popoutName);
         var popoutPhone = document.createElement("div");
         popoutPhone.classList.add("popout-phone");
@@ -274,7 +368,8 @@ function createPopout(location, boxElement) {
     punch.innerText = "Punch";
     punch.onclick = function() {
         makeRequest("POST", "/check", {
-            locationId: location.location.id
+            locationId: location.location.id,
+            guest: document.querySelector("#guest").value
         }, function(text) {
             createToast("Punch Successful");
             fetchStatus(); // only fetch if we aren't already
