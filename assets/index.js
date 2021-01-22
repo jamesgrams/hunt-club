@@ -206,7 +206,7 @@ function fetchStatus() {
         chat = json.chat;
         statusTimeout = setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
         window.onresize = addBoxes;
-        if( JSON.stringify(locations) !== JSON.stringify(prevLocations) || !document.querySelector(".box") ) {
+        if( JSON.stringify(locations) !== JSON.stringify(prevLocations) || (!document.querySelector(".box") && Object.keys(locations).length) ) {
             addBoxes(); // redraw
         }
         if( JSON.stringify(prevCurrentDrawStatus) !== JSON.stringify(currentDrawStatus) || JSON.stringify(prevNextDrawStatus) !== JSON.stringify(nextDrawStatus) ) {
