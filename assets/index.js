@@ -219,6 +219,7 @@ function setupLogin() {
             document.querySelector("#admin").classList.remove("hidden");
         }
         document.querySelector("#user-name").innerText = info.name;
+        setupAdmin(); // doesn't update in fetchStatus so need to call here
     }
 
     document.querySelector("#login").onclick = function(e) {
