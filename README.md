@@ -7,6 +7,8 @@ Hunt Club will let a user log in, sign in and out from locations, and enter draw
 ## Admin Features
 1. To add a user, run `node src\index.js --email <email> --password <password> --name <name> --phone <phone>
 2. You can give people priority in a drawings - currently this must be done in the database by setting the priority column to true.
+3. There is also a web-based admin section where you can perform CRUD operations with users and give them a priority pass for the next drawing. Note: they must have already entered the next drawing to get a priority pass.
+4. To make someone an admin, set the admin flag to true in the `users` database table.
 
 ## Setup
 1. Clone this repository
