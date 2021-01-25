@@ -42,11 +42,11 @@ button {
     cursor: pointer;
 }
 
-.hidden, .hidden2 {
+.hidden, .hidden-for-page {
     display: none;
 }
 
-#text-section, #text-section input, #text-section button, .popout button, #chat button, #chat-message {
+#text-section, #text-section input, #text-section button, .popout button, #chat button, #chat-message, #admin input, #admin button, #admin, #admin select, #admin option {
     font-size: 18px;
 }
 
@@ -102,7 +102,7 @@ nav > ul > li {
     margin-right: 20px;
 }
 
-#chat {
+#chat, #admin {
     margin-top: 10px;
 }
 
@@ -146,4 +146,8 @@ nav > ul > li {
 
 #submit-chat-wrapper {
     text-align: right;
+}
+
+#admin label {
+    display: block;
 }

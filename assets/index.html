@@ -51,11 +51,12 @@
                         <li><a href="?map=5">Horse Branch Creek</a></li>
                         <li><a href="?map=1">Bull Skin Creek</a></li>
                         <li><a href="?map=chat">Chat</a></li>
+                        <li><a href="?map=admin">Admin</a></li>
                     </ul>
                 </nav>
             </div>
             <div id="map"></div>
-            <div id="chat" class="hidden hidden2">
+            <div id="chat" class="hidden hidden-for-page">
                 <div id="chat-messages"></div>
                 <form>
                     <label for="chat-message">
@@ -65,6 +66,18 @@
                         <button id="submit-chat">Send</button>
                     </div>
                 </form>
+            </div>
+            <div id="admin" class="hidden hidden-for-page">
+                <select id="admin-select"></select>
+                <div id="admin-current-user"></div>
+                <label for="admin-email">Email: <input required type="email" id="admin-email" name="admin-email"/></label>
+                <label for="admin-password">Password: <input required type="password" id="admin-password" name="admin-password"/></label>
+                <label for="admin-name">Name: <input required type="text" id="admin-name" name="admin-name"/></label>
+                <label for="admin-phone">Phone: <input required type="tel" id="admin-phone" name="admin-phone"/></label>
+                <button id="add-user">Add User</button>
+                <button id="update-user" class="hidden">Update User</button>
+                <button id="delete-user" class="hidden">Delete User</button>
+                <button id="priority-user" class="hidden">Give Priority Pass</button>
             </div>
         </main>
         <script src="index.js"></script>

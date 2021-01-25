@@ -23,6 +23,110 @@ window.addEventListener('load', function() {
 });
 
 /**
+ * Setup the admin.
+ * This isn't called on every load.
+ * @param {number} selectedId - The user ID to start as selected.
+ */
+function setupAdmin( selectedId ) {
+    makeRequest("GET", "/user", {}, function(responseText) {
+        var users = JSON.parse(responseText).users;
+        var select = document.querySelector("#admin-select");
+        select.innerText = "";
+        users.unshift({
+            id: "",
+            name: "",
+            email: "",
+            phone: ""
+        });
+        for( var i=0; i<users.length; i++ ) {
+            var option = document.createElement("option");
+            option.innerText = users[i].name;
+            option.setAttribute("data-email", users[i].email);
+            option.setAttribute("data-phone", users[i].phone);
+            option.setAttribute("value", users[i].id);
+            if( users[i].id == selectedId ) option.setAttribute("selected","selected");
+            select.appendChild(option);
+        }
+        var adminEmail = document.querySelector("#admin-email");
+        var adminPhone = document.querySelector("#admin-phone");
+        var adminName = document.querySelector("#admin-name");
+        var adminPassword = document.querySelector("#admin-password");
+        select.onchange = function() {
+            var selectedElement = select.options[select.selectedIndex];
+            var email = selectedElement.getAttribute("data-email");
+            var phone = selectedElement.getAttribute("data-phone");
+            var id = selectedElement.getAttribute("value");
+            var name = selectedElement.innerText;
+            if( !id ) {
+                adminEmail.value = "";
+                adminPhone.value = "";
+                adminName.value = "";
+                adminPassword.value = "";
+                document.querySelector("#update-user").classList.add("hidden");
+                document.querySelector("#delete-user").classList.add("hidden");
+                document.querySelector("#priority-user").classList.add("hidden");
+                document.querySelector("#add-user").classList.remove("hidden");
+            }
+            else {
+                adminEmail.value = email;
+                adminPhone.value = phone;
+                adminName.value = name;
+                adminPassword.value = "";
+                document.querySelector("#add-user").classList.add("hidden");
+                document.querySelector("#update-user").classList.remove("hidden");
+                document.querySelector("#delete-user").classList.remove("hidden");
+                document.querySelector("#priority-user").classList.remove("hidden");
+            }
+        }
+        select.onchange();
+        document.querySelector("#add-user").onclick = function(e) {
+            e.preventDefault();
+            makeRequest("POST", "/user", { 
+                email: adminEmail.value,
+                phone: adminPhone.value,
+                name: adminName.value,
+                password: adminPassword.value
+            }, function() {
+                setupAdmin();
+                createToast("User added");
+            }, errorToast);
+        }
+        document.querySelector("#update-user").onclick = function(e) {
+            e.preventDefault();
+            makeRequest("PUT", "/user", {
+                id: select.value,
+                email: adminEmail.value,
+                phone: adminPhone.value,
+                name: adminName.value,
+                password: adminPassword.value
+            }, function() {
+                setupAdmin( select.value );
+                createToast("User updated");
+            }, errorToast);
+        }
+        document.querySelector("#delete-user").onclick = function(e) {
+            e.preventDefault();
+            if( !window.confirm("Are you sure you want to delete this user?") ) return;
+            makeRequest("DELETE", "/user", {
+                id: select.value
+            }, function() {
+                setupAdmin();
+                createToast("User deleted");
+            }, errorToast);
+        }
+        document.querySelector("#priority-user").onclick = function(e) {
+            e.preventDefault();
+            makeRequest("POST", "/priority", {
+                id: select.value
+            }, function() {
+                createToast("Priority pass granted");
+            }, errorToast);
+        }
+        document.querySelector("#admin").classList.remove("hidden-for-page");
+    }, errorToast);
+}
+
+/**
  * Setup the chat.
  */
 function setupChat() {
@@ -53,7 +157,6 @@ function setupPhysical() {
                 createToast("Could not fetch location");
             })
         }
-        //makeRequest("POST", "/physical")
     }
 }
 
@@ -93,9 +196,16 @@ function setupLogin() {
         nextDrawStatus = {};
         document.querySelector("#logout-section").classList.add("hidden");
         document.querySelector("#chat").classList.add("hidden");
+        document.querySelector("#admin").classList.add("hidden");
         document.querySelector("#login-section").classList.remove("hidden");
         document.querySelector("#user-name").innerText = "";
         document.querySelector("#chat-messages").innerText = "";
+        document.querySelector("#admin-select").innerText = "";
+        document.querySelector("#admin-current-user").innerText = "";
+        document.querySelector("#admin-email").value = "";
+        document.querySelector("#admin-password").value = "";
+        document.querySelector("#admin-name").value = "";
+        document.querySelector("#admin-phone").value = "";
         document.querySelectorAll(".box").forEach( function(el) {
             el.parentElement.removeChild(el);
         });
@@ -105,6 +215,9 @@ function setupLogin() {
         document.querySelector("#logout-section").classList.remove("hidden");
         document.querySelector("#chat").classList.remove("hidden");
         var info = JSON.parse(decodeURIComponent(idCookie));
+        if( info.admin ) {
+            document.querySelector("#admin").classList.remove("hidden");
+        }
         document.querySelector("#user-name").innerText = info.name;
     }
 
@@ -114,12 +227,12 @@ function setupLogin() {
         var password = document.querySelector("#password");
         var emailValue = email.value;
         var passwordValue = password.value;
-        email.value = "";
         password.value = "";
         makeRequest("POST", "/login", {
             email: emailValue,
             password: passwordValue
         }, function(text) {
+            email.value = "";
             createToast("Logged in");
             setupLogin();
         }, errorToast);
@@ -139,12 +252,21 @@ function loadMap() {
     var url = new URL(window.location.href);
     mapId = url.searchParams.get("map");
     if( mapId === "chat" ) {
-        document.querySelector("#chat").classList.remove("hidden2");
+        document.querySelector("#chat").classList.remove("hidden-for-page");
         var mapName = "Chat";
         document.title = mapName + ": " + document.title;
         var h1 = document.querySelector("h1");
         h1.innerText = mapName + ": " + h1.innerText;
-        fetchStatus();
+        fetchStatus(); // may be a good idea to split chat status and map status... maybe
+        return;
+    }
+    if( mapId === "admin" ) {
+        var mapName = "Admin";
+        document.title = mapName + ": " + document.title;
+        var h1 = document.querySelector("h1");
+        h1.innerText = mapName + ": " + h1.innerText; // NO FETCH STATUS FOR THIS PAGE (not true because we need drawing)
+        setupAdmin();
+        fetchStatus(); // need to fetch status for drawing actually.
         return;
     }
     makeRequest("GET", "/map", { mapId: mapId }, function(text) {

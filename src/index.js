@@ -53,7 +53,10 @@ const ERROR_MESSAGES = {
     drawNotHappening: "No draw is currently happening",
     deerSeasonMaxSignIns: "You can only sign in twice per day during Deer Season",
     notWithinAnyMap: "You aren't located within any map",
-    noChatMessage: "Please enter a message"
+    noChatMessage: "Please enter a message",
+    noUserSpecified: "No user specified",
+    cannotDeleteSelf: "You can't delete yourself",
+    missingUserFields: "Please fill out all fields"
 }
 
 let connection;
@@ -180,19 +183,71 @@ app.post("/chat", async function(request, response) {
     } );
 });
 
+// Add a user
+app.post("/user", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        await addUser( request.body.email, request.body.password, request.body.name, request.body.phone );
+        return Promise.resolve({
+            status: SUCCESS
+        })
+    }, true );
+});
+
+// Get users
+app.get("/user", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        let users = await getUsers();
+        return Promise.resolve({
+            status: SUCCESS,
+            users: users
+        })
+    }, true );
+});
+
+// Update user
+app.put("/user", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        await updateUser( request.body.id, request.body.email, request.body.password, request.body.name, request.body.phone );
+        return Promise.resolve({
+            status: SUCCESS
+        })
+    }, true );
+});
+
+// delete user
+app.delete("/user", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        await deleteUser( request.query.id, user.id );
+        return Promise.resolve({
+            status: SUCCESS
+        })
+    }, true );
+});
+
+// give a user priority in the next drawing
+app.post("/priority", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        await giveDrawingPriorityInNextDrawing( request.body.id );
+        return Promise.resolve({
+            status: SUCCESS
+        })
+    }, true );
+});
+
 /**
  * Perform a standard action.
  * @param {Request} request - The request object.
  * @param {Response} response - The response object.
- * @param {boolean} [validateUser] - The token cookie.
+ * @param {boolean} [validateUser] - True if there must be a user.
  * @param {Function} successFunction - The function to run on success
+ * @param {boolean} [validateAdmin] - True if the user must be an admin.
  */
-async function action( request, response, validateUser, successFunction ) {
+async function action( request, response, validateUser, successFunction, validateAdmin ) {
     let code = HTTP_OK;
     let obj = {};
     try {
         let user;
-        if( validateUser ) user = await validateToken(request.cookies[TOKEN_COOKIE]);
+        if( validateUser ) user = await validateToken(request.cookies[TOKEN_COOKIE], validateAdmin);
         try {
             obj = await successFunction( request, user );
         }
@@ -235,20 +290,108 @@ async function main() {
     // dotenv helps with .env file - does what heroku does
     let args = minimist(process.argv.slice(2));
     if( args.email && args.password && args.name && args.phone ) {
-        const crypto = require("crypto");
-
-        let salt = crypto.randomBytes(20).toString('hex');
-
-        let hash = crypto.scryptSync(args.password, salt, CRYPTO_KEY_LEN).toString("hex");
-
-        await connection.execute("INSERT INTO users(email,hash,salt,name,phone) VALUES(?,?,?,?,?)", [args.email,hash,salt,args.name,args.phone]);
+        await addUser( args.email, args.password, args.name, args.phone );
         console.log("Inserted");
-        return;
+        return Promise.resolve();
     }
 
     app.listen(PORT);
     startDrawAtRightTime();
     startReportAtRightTime();
+}
+
+/**
+ * Get a list of all users.
+ * @returns {Promise<Array>} An array of all the users.
+ */
+async function getUsers() {
+    let [rows, fields] = await connection.execute("SELECT id, name, email, phone FROM users");
+    return Promise.resolve(rows.map(row => {
+        return {
+            id: row.id,
+            name: row.name,
+            email: row.email,
+            phone: row.phone
+        }
+    }));
+}
+
+/**
+ * Add user.
+ * @param {string} email - The user email. 
+ * @param {string} password - The user password.
+ * @param {string} name - The user name.
+ * @param {string} phone - The user phone.
+ */
+async function addUser( email, password, name, phone ) {
+    if( !email || !password || !name || !phone ) return Promise.reject(ERROR_MESSAGES.missingUserFields);
+    let result = passwordToHash(password);
+    await connection.execute("INSERT INTO users(email,hash,salt,name,phone) VALUES(?,?,?,?,?)", [email,result.hash,result.salt,name,phone]);
+    return Promise.resolve();
+}
+
+/**
+ * Delete a user.
+ * @param {string} id - The user id. 
+ */
+async function deleteUser( id, userId ) {
+    if( !id ) return Promise.reject(ERROR_MESSAGES.noUserSpecified);
+    if( id === userId ) return Promise.reject(ERROR_MESSAGES.cannotDeleteSelf);
+    await connection.execute("DELETE FROM users WHERE id = ?", [id]);
+    return Promise.resolve();
+}
+
+/**
+ * Update a user.
+ * @param {string} id - The user ID. 
+ * @param {string} [email] - The email. 
+ * @param {string} [password] - The password.
+ * @param {name} [name] - The user name.
+ * @param {phone} [phone] - The user phone.
+ */
+async function updateUser( id, email, password, name, phone ) {
+    if( !id ) return Promise.reject(ERROR_MESSAGES.noUserSpecified);
+    let queryParams = [];
+    let queryParts = [];
+    if( email ) {
+        queryParts.push("email = ?");
+        queryParams.push(email);
+    }
+    if( password ) {
+        let result = passwordToHash( password );
+        queryParts.push("hash = ?");
+        queryParts.push("salt = ?");
+        queryParams.push(result.hash);
+        queryParams.push(result.salt);
+    }
+    if( name ) {
+        queryParts.push("name = ?");
+        queryParams.push(name);
+    }
+    if( phone ) {
+        queryParts.push("phone = ?");
+        queryParams.push(phone);
+    }
+    if( queryParams.length ) {
+        let query = "UPDATE users SET " + queryParts.join(",") + " WHERE id = ?";
+        queryParams.push(id);
+        await connection.execute(query, queryParams);
+    }
+    return Promise.resolve();
+}
+
+/**
+ * Convert a password to a hash.
+ * @param {string} password - The password.
+ * @returns {Object} An object with a key for salt and hash.
+ */
+function passwordToHash( password ) {
+    let salt = crypto.randomBytes(20).toString('hex');
+    let hash = crypto.scryptSync(password, salt, CRYPTO_KEY_LEN).toString("hex");
+    return {
+        salt: salt,
+        hash: hash
+    };
 }
 
 /**
@@ -493,6 +636,16 @@ async function postChat( userId, message ) {
 }
 
 /**
+ * Grant a user priority drawing in the next drawing.
+ * @param {string} userId - The user ID. 
+ */
+async function giveDrawingPriorityInNextDrawing( userId ) {
+    if( drawLock ) return Promise.reject(ERROR_MESSAGES.drawProcessing);
+    await connection.execute("UPDATE drawings SET priority = true WHERE user_id = ?", [userId]);
+    return Promise.resolve();
+}
+
+/**
  * Enter the drawing for the next day or leave it if already in it.
  * @param {number} userId - The ID of the user.
  */
@@ -611,16 +764,17 @@ async function createToken( email, password ) {
         return Promise.reject(ERROR_MESSAGES.pleaseProvideAnEmailAndPassword);
     }
 
-    let [rows, fields] = await connection.execute("SELECT id, email, hash, salt, name, phone FROM users WHERE email = ?", [email]);
+    let [rows, fields] = await connection.execute("SELECT id, email, hash, salt, name, phone, admin FROM users WHERE email = ?", [email]);
     if( !rows.length ) return Promise.reject(ERROR_MESSAGES.accountDoesNotExist);
     let user = rows[0];
     
     if(user.hash) {
         if( crypto.scryptSync(password, user.salt, CRYPTO_KEY_LEN).toString("hex") == user.hash ) {
-            let id = {"id": user.id, "email": user.email };
+            let id = {"id": user.id, "email": user.email};
             let token = jwt.sign( id, TOKEN_KEY, TOKEN_OPTIONS );
             id.name = user.name;
             id.phone = user.phone;
+            id.admin = user.admin;
             return Promise.resolve({
                 token: token,
                 id: id    
@@ -638,13 +792,16 @@ async function createToken( email, password ) {
 /**
  * Validate the header token.
  * @param {string} token - The user token.
+ * @param {boolean} [asAdmin] - True if we want to validate the user as an admin.
  * @returns {Promise<Object>} - A promise containing the decrypted object or a rejected promise with an error message.
  */
-async function validateToken( token ) {
+async function validateToken( token, asAdmin ) {
     if( token ) {
         try {
             let result = jwt.verify( token, TOKEN_KEY, TOKEN_OPTIONS );
-            let [rows, fields] = await connection.execute("SELECT id FROM users WHERE id = ?", [result.id]);
+            let rows, fields;
+            if( !asAdmin ) [rows, fields] = await connection.execute("SELECT id FROM users WHERE id = ?", [result.id]);
+            else [rows, fields] = await connection.execute("SELECT id FROM users WHERE id = ? AND admin = true", [result.id]);
             if( !rows.length ) return Promise.reject(ERROR_MESSAGES.invalidToken);
             return Promise.resolve(result);
         }
