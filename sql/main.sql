@@ -2,8 +2,8 @@ INSERT INTO maps(id, name, image_src, circle_diameter, center_lat, center_lng, v
 (1, "Bull Skin Creek", "/assets/images/map.png", 0.01490066225, 34.6457, -81.0815, 4.25),
 (2, "Wateree Creek", "/assets/images/wateree.png", 0.014154870940882597, 34.4969, -80.9303, 1.5),
 (3, "Minton Creek", "/assets/images/minton.png", 0.015, 34.4473, -81.0139, 1.22),
-(4, "White Oak Creek", "/assets/images/whiteoak.png", 0.014950166112956811, 34.4620, -81.1588, 2.56),
-(5, "Horse Branch Creek", "/assets/images/horsebranch.png", 0.014827018121911038, 34.4249, -80.9506, 2.48);
+(4, "White Oak", "/assets/images/whiteoak.png", 0.014950166112956811, 34.4620, -81.1588, 2.56),
+(5, "Horse Branch", "/assets/images/horsebranch.png", 0.014827018121911038, 34.4249, -80.9506, 2.48);
 
 INSERT INTO locations(id, name, map_id, x, y) VALUES
 (1, "1B", 1, 0.2907350993377483, 0.19740229885057472),
