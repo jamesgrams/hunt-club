@@ -11,6 +11,7 @@ var chat = [];
 var locations = {};
 var currentDrawStatus = {};
 var nextDrawStatus = {};
+var passes = {};
 var imageJustLoaded = false;
 
 window.addEventListener('load', function() {
@@ -117,7 +118,7 @@ function setupAdmin( selectedId ) {
         }
         document.querySelector("#priority-user").onclick = function(e) {
             e.preventDefault();
-            makeRequest("POST", "/priority", {
+            makeRequest("POST", "/pass", {
                 id: select.value
             }, function() {
                 createToast("Priority pass granted");
@@ -168,7 +169,7 @@ function setupDrawing() {
     document.querySelectorAll("#enter-next, #exit-next").forEach( function(el) {
         el.onclick = function() {
             makeRequest("POST", "/drawing", {}, function(text) {
-                createToast( el.getAttribute("id") === "enter-next" ? "Drawing entered" : " Drawing exited" );
+                createToast( el.getAttribute("id") === "enter-next" ? "Drawing entered" : "Drawing exited" );
                 fetchStatus();
             }, errorToast);
         }
@@ -180,6 +181,15 @@ function setupDrawing() {
             createToast("Skipped spot");
         }, errorToast);
     }
+
+    document.querySelectorAll("#pass-next, #no-pass-next").forEach( function(el) {
+        el.onclick = function() {
+            makeRequest("POST", "/priority", {}, function(text) {
+                createToast( el.getAttribute("id") === "pass-next" ? "Priority Pass set to be used" : "Priority Pass set to not be used" );
+                fetchStatus();
+            }, errorToast);
+        }
+    });
 }
 
 /**
@@ -195,6 +205,7 @@ function setupLogin() {
         locations = {};
         currentDrawStatus = {};
         nextDrawStatus = {};
+        passes = {};
         document.querySelector("#logout-section").classList.add("hidden");
         document.querySelector("#chat").classList.add("hidden");
         document.querySelector("#admin").classList.add("hidden");
@@ -331,13 +342,15 @@ function fetchStatus() {
         nextDrawStatus = json.nextDrawStatus;
         var prevChat = chat;
         chat = json.chat;
+        var prevPasses = passes;
+        passes = json.passes;
         statusTimeout = setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
         window.onresize = addBoxes;
         if( imageJustLoaded || JSON.stringify(locations) !== JSON.stringify(prevLocations) || (!document.querySelector(".box") && Object.keys(locations).length) ) {
             addBoxes(); // redraw
             imageJustLoaded = false;
         }
-        if( JSON.stringify(prevCurrentDrawStatus) !== JSON.stringify(currentDrawStatus) || JSON.stringify(prevNextDrawStatus) !== JSON.stringify(nextDrawStatus) ) {
+        if( JSON.stringify(passes) !== JSON.stringify(prevPasses) || JSON.stringify(prevCurrentDrawStatus) !== JSON.stringify(currentDrawStatus) || JSON.stringify(prevNextDrawStatus) !== JSON.stringify(nextDrawStatus) ) {
             addDraws();
         }
         if( JSON.stringify(chat) !== JSON.stringify(prevChat) ) {
@@ -418,14 +431,35 @@ function addDraws() {
 
     var enterNext = document.querySelector("#enter-next");
     var exitNext = document.querySelector("#exit-next");
+    var passSection = document.querySelector("#pass-section");
     if( nextDrawStatus.inNextDraw ) {
         enterNext.classList.add("hidden");
         exitNext.classList.remove("hidden");
+        passSection.classList.remove("hidden");
     }
     else {
+        passSection.classList.add("hidden");
         exitNext.classList.add("hidden");
         enterNext.classList.remove("hidden");
     }
+
+    var passNext = document.querySelector("#pass-next");
+    var noPassNext = document.querySelector("#no-pass-next");
+    if( !passes.availablePasses.length && !passes.toBeUsedPasses.length ) {
+        passNext.classList.add("hidden");
+        noPassNext.classList.add("hidden");
+    }
+    else {
+        if( passes.toBeUsedPasses.length ) {
+            passNext.classList.add("hidden");
+            noPassNext.classList.remove("hidden");
+        }
+        else {
+            noPassNext.classList.add("hidden");
+            passNext.classList.remove("hidden");
+        }
+    }
+    document.querySelector("#pass-count").innerText = passes.availablePasses.length;
 }
 
 /**
@@ -455,6 +489,8 @@ function addBoxes() {
             boxElement.classList.add("box");
         }
         boxElement.setAttribute("style", "left:" + location.location.x*width + "px;top:" + location.location.y*height + "px;width:" + diameter + "px;height:" + diameter + "px;");
+        if( location.user.physical ) boxElement.classList.add("box-physical");
+        else boxElement.classList.remove("box-physical");
         if( location.user.id ) boxElement.classList.add("box-taken");
         else boxElement.classList.remove("box-taken");
         boxElement.onclick = (function(location, boxElement) {

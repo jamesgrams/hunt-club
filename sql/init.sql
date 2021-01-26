@@ -65,6 +65,7 @@ CREATE TABLE checks (
 
 CREATE INDEX idx_checks_location_id ON checks(location_id);
 CREATE INDEX idx_checks_user_id ON checks(user_id);
+CREATE INDEX idx_checks_created ON checks(created);
 
 CREATE TABLE drawings (
     id int unsigned not null auto_increment,
@@ -72,7 +73,6 @@ CREATE TABLE drawings (
     modified timestamp default now() on update now() not null,
     user_id int unsigned not null,
     draw_order int unsigned,
-    priority boolean,
     constraint pk_drawings primary key(id),
     constraint fk_drawings_users foreign key (user_id) references users(id) on delete cascade
 );
@@ -92,6 +92,7 @@ CREATE TABLE physicals (
 
 CREATE INDEX idx_physicals_map_id on physicals(map_id);
 CREATE INDEX idx_phsyicals_user_id on physicals(user_id);
+CREATE INDEX idx_physicals_created ON physicals(created);
 
 CREATE TABLE messages (
     id int unsigned not null auto_increment,
@@ -104,3 +105,18 @@ CREATE TABLE messages (
 );
 
 CREATE INDEX idx_messages_user_id on messages(user_id);
+CREATE INDEX idx_messages_created on messages(created);
+
+CREATE TABLE passes (
+    id int unsigned not null auto_increment,
+    created timestamp default now(),
+    modified timestamp default now() on update now() not null,
+    drawing_id int unsigned,
+    user_id int unsigned not null,
+    constraint pk_passes primary key(id),
+    constraint fk_passes_drawings foreign key (drawing_id) references drawings(id) on delete set null,
+    constraint fk_passes_users foreign key (user_id) references users(id) on delete cascade
+);
+
+CREATE INDEX idx_passes_user_id on passes(user_id);
+CREATE INDEX idx_passes_drawing_id on passes(drawing_id);

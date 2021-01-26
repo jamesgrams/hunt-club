@@ -56,7 +56,9 @@ const ERROR_MESSAGES = {
     noChatMessage: "Please enter a message",
     noUserSpecified: "No user specified",
     cannotDeleteSelf: "You can't delete yourself",
-    missingUserFields: "Please fill out all fields"
+    missingUserFields: "Please fill out all fields",
+    pleaseEnterTheNextDrawFirst: "Please enter the next draw first",
+    noPassesAvailable: "No passes available"
 }
 
 let connection;
@@ -96,12 +98,14 @@ app.get("/status", async function(request, response) {
         let locations = await status( request.query.mapId );
         let currentDrawStatus = await currentDrawingStatus( user.id );
         let nextDrawStatus = await nextDrawingStatus( user.id );
+        let passes = await getPasses( user.id );
         let chat = await getChat();
         return Promise.resolve({ 
             locations: locations,
             currentDrawStatus: currentDrawStatus,
             nextDrawStatus: nextDrawStatus,
             chat: chat,
+            passes: passes,
             status: SUCCESS
         });
     });
@@ -225,13 +229,23 @@ app.delete("/user", async function(request, response) {
 });
 
 // give a user priority in the next drawing
-app.post("/priority", async function(request, response) {
+app.post("/pass", async function(request, response) {
     await action( request, response, true, async ( request, user ) => {
-        await giveDrawingPriorityInNextDrawing( request.body.id );
+        await givePass( request.body.id );
         return Promise.resolve({
             status: SUCCESS
         })
     }, true );
+});
+
+// toggle a priority pass for the next draw
+app.post("/priority", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        await togglePass( user.id );
+        return Promise.resolve({
+            status: SUCCESS
+        })
+    } );
 });
 
 /**
@@ -575,7 +589,7 @@ function distance(lat1, lon1, lat2, lon2) {
 async function status( mapId ) {
     if( !mapId ) return Promise.reject(ERROR_MESSAGES.noMapSpecified);
     // counts on id being in order of when created
-    let [rows, fields] = await connection.execute("SELECT users.id as user_id, locations.id as location_id, users.name as user_name, users.phone as user_phone, locations.name as location, x, y, guest FROM (SELECT max(id) as id, count(1) as count FROM checks group by location_id having MOD(count, 2) = 1) AS ids JOIN checks on checks.id = ids.id JOIN users ON checks.user_id = users.id RIGHT OUTER JOIN locations ON checks.location_id = locations.id WHERE locations.map_id = ?", [mapId]);
+    let [rows, fields] = await connection.execute("SELECT users.id as user_id, locations.id as location_id, users.name as user_name, users.phone as user_phone, locations.name as location, x, y, guest, physicals.id as physical_id FROM (SELECT max(id) as id, count(1) as count FROM checks group by location_id having MOD(count, 2) = 1) AS ids JOIN checks on checks.id = ids.id JOIN users ON checks.user_id = users.id RIGHT OUTER JOIN locations ON checks.location_id = locations.id LEFT OUTER JOIN (SELECT * FROM physicals WHERE DATE(created) = CURDATE() AND map_id = ?) AS physicals ON users.id = physicals.user_id WHERE locations.map_id = ?", [mapId, mapId]);
     let locations = {};
     for( let row of rows ) {
         locations[row.location_id] = {
@@ -583,7 +597,8 @@ async function status( mapId ) {
                 id: row.user_id,
                 name: row.user_name,
                 phone: row.user_phone,
-                guest: row.guest
+                guest: row.guest,
+                physical: row.physical_id ? true : false
             },
             location: {
                 id: row.location_id,
@@ -636,12 +651,56 @@ async function postChat( userId, message ) {
 }
 
 /**
- * Grant a user priority drawing in the next drawing.
+ * Grant a user a priority pass.
  * @param {string} userId - The user ID. 
  */
-async function giveDrawingPriorityInNextDrawing( userId ) {
+async function givePass( userId ) {
     if( drawLock ) return Promise.reject(ERROR_MESSAGES.drawProcessing);
-    await connection.execute("UPDATE drawings SET priority = true WHERE user_id = ?", [userId]);
+    await connection.execute("INSERT INTO passes(user_id) VALUES (?)", [userId]);
+    return Promise.resolve();
+}
+
+/**
+ * Get the status of priority passes for a user.
+ * @param {string} userId - The user ID.
+ * @returns {Promise<Object>} - A promise with keys for available passes and passes listed as to be used.
+ */
+async function getPasses( userId ) {
+    let [rows, fields] = await connection.execute("SELECT id FROM passes WHERE drawing_id is null and user_id = ?", [userId]);
+    let availablePasses = rows.map(el => el.id);
+    [rows, fields] = await connection.execute("SELECT passes.id FROM passes JOIN drawings ON passes.drawing_id = drawings.id WHERE drawings.draw_order is null AND passes.user_id = ?", [userId]);
+    let toBeUsedPasses = rows.map(el => el.id);
+    return Promise.resolve({
+        availablePasses: availablePasses,
+        toBeUsedPasses: toBeUsedPasses
+    });
+}
+
+/**
+ * Toggle a priority pass for the next draw.
+ * @param {string} userId - The user ID.
+ */
+async function togglePass( userId ) {
+    if( drawLock ) return Promise.reject(ERROR_MESSAGES.drawProcessing);
+    let passStatus = await getPasses( userId );
+    if( passStatus.toBeUsedPasses.length ) {
+        // should only be one
+        for( let passId of passStatus.toBeUsedPasses ) {
+            await connection.execute("UPDATE passes SET drawing_id = null WHERE id = ?", [passId]);
+        }
+    }
+    else {
+        // have to make for they have a pass
+        // have to make sure they are in a drawing
+        if( !passStatus.availablePasses.length ) {
+            return Promise.reject(ERROR_MESSAGES.noPassesAvailable);
+        }
+        let [rows, fields] = await connection.execute("SELECT id FROM drawings WHERE user_id = ? AND draw_order is null", [userId]);
+        if( !rows.length ) {
+            return Promise.reject(ERROR_MESSAGES.pleaseEnterTheNextDrawFirst);
+        }
+        await connection.execute("UPDATE passes SET drawing_id = ? WHERE id = ?", [rows[0].id, passStatus.availablePasses[0]]);
+    }
     return Promise.resolve();
 }
 
@@ -721,7 +780,7 @@ async function performDrawing() {
             }
         }
     }
-    [rows, fields] = await connection.execute("SELECT id, user_id, priority FROM drawings WHERE draw_order is null");
+    [rows, fields] = await connection.execute("SELECT drawings.id, drawings.user_id, passes.id AS priority FROM drawings LEFT OUTER JOIN passes ON drawings.id = passes.drawing_id WHERE draw_order is null");
     let priorityRows = shuffle(rows.filter( row => row.priority ));
     let normalRows = shuffle(rows.filter( row => !row.priority ));
     drawEntrants = [...priorityRows, ...normalRows];
