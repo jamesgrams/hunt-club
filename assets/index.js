@@ -11,6 +11,7 @@ var chat = [];
 var locations = {};
 var currentDrawStatus = {};
 var nextDrawStatus = {};
+var imageJustLoaded = false;
 
 window.addEventListener('load', function() {
 
@@ -276,6 +277,9 @@ function loadMap() {
         var img = document.createElement("img");
         img.setAttribute("src", json.map.image_src);
         img.setAttribute("alt", json.map.name + " Map");
+        img.onload = function() {
+            imageJustLoaded = true;
+        }
         document.querySelector("#map").appendChild(img);
         document.title = json.map.name + ": " + document.title;
         var h1 = document.querySelector("h1");
@@ -329,8 +333,9 @@ function fetchStatus() {
         chat = json.chat;
         statusTimeout = setTimeout(fetchStatus, STATUS_FETCH_INTERVAL);
         window.onresize = addBoxes;
-        if( JSON.stringify(locations) !== JSON.stringify(prevLocations) || (!document.querySelector(".box") && Object.keys(locations).length) ) {
+        if( imageJustLoaded || JSON.stringify(locations) !== JSON.stringify(prevLocations) || (!document.querySelector(".box") && Object.keys(locations).length) ) {
             addBoxes(); // redraw
+            imageJustLoaded = false;
         }
         if( JSON.stringify(prevCurrentDrawStatus) !== JSON.stringify(currentDrawStatus) || JSON.stringify(prevNextDrawStatus) !== JSON.stringify(nextDrawStatus) ) {
             addDraws();
