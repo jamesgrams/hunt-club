@@ -589,7 +589,7 @@ function distance(lat1, lon1, lat2, lon2) {
 async function status( mapId ) {
     if( !mapId ) return Promise.reject(ERROR_MESSAGES.noMapSpecified);
     // counts on id being in order of when created
-    let [rows, fields] = await connection.execute("SELECT users.id as user_id, locations.id as location_id, users.name as user_name, users.phone as user_phone, locations.name as location, x, y, guest, physicals.id as physical_id FROM (SELECT max(id) as id, count(1) as count FROM checks group by location_id having MOD(count, 2) = 1) AS ids JOIN checks on checks.id = ids.id JOIN users ON checks.user_id = users.id RIGHT OUTER JOIN locations ON checks.location_id = locations.id LEFT OUTER JOIN (SELECT * FROM physicals WHERE DATE(created) = CURDATE() AND map_id = ?) AS physicals ON users.id = physicals.user_id WHERE locations.map_id = ?", [mapId, mapId]);
+    let [rows, fields] = await connection.execute("SELECT users.id as user_id, locations.id as location_id, users.name as user_name, users.phone as user_phone, locations.name as location, x, y, guest, physicals.id as physical_id, checks.created AS created FROM (SELECT max(id) as id, count(1) as count FROM checks group by location_id having MOD(count, 2) = 1) AS ids JOIN checks on checks.id = ids.id JOIN users ON checks.user_id = users.id RIGHT OUTER JOIN locations ON checks.location_id = locations.id LEFT OUTER JOIN (SELECT * FROM physicals WHERE DATE(created) = CURDATE() AND map_id = ?) AS physicals ON users.id = physicals.user_id WHERE locations.map_id = ?", [mapId, mapId]);
     let locations = {};
     for( let row of rows ) {
         locations[row.location_id] = {
@@ -598,7 +598,8 @@ async function status( mapId ) {
                 name: row.user_name,
                 phone: row.user_phone,
                 guest: row.guest,
-                physical: row.physical_id ? true : false
+                physical: row.physical_id ? true : false,
+                created: row.created ? row.created.toLocaleString("en-US", {timeZone: "UTC"}) : null
             },
             location: {
                 id: row.location_id,

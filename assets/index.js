@@ -526,6 +526,10 @@ function createPopout(location, boxElement) {
         popoutPhone.classList.add("popout-phone");
         popoutPhone.innerText = location.user.phone;
         popout.appendChild(popoutPhone);
+        var popoutDate = document.createElement("div");
+        popoutDate.classList.add("popout-created");
+        popoutDate.innerText = location.user.created;
+        popout.appendChild(popoutDate);
     }
     
     var punch = document.createElement("button");
