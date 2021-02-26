@@ -94,6 +94,15 @@ button {
     color: red;
 }
 
+#current-drawing-your-turn {
+    display: none;
+}
+
+#current-drawing-section.your-draw #current-drawing-your-turn {
+    display: block;
+    font-weight: bold;
+}
+
 nav > ul {
     list-style-type: none;
     margin: 0;

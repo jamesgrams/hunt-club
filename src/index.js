@@ -906,7 +906,7 @@ function startDrawAtRightTime() {
     let now = new Date();
     // send at 5am
     // be sure TZ is set properly in heroku's environment variables - we are on eastern time, so that's when our sign up is
-    let millisTilSend = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 13, 25, 0, 0) - now;
+    let millisTilSend = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 13, 34, 0, 0) - now;
     if (millisTilSend < 0) {
         millisTilSend += 86400000; // it's after 5am, try 5am tomorrow.
     }
