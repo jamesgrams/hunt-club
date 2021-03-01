@@ -5,6 +5,8 @@ const crypto = require("crypto");
 const cookieParser = require("cookie-parser");
 const minimist = require("minimist");
 const nodemailer = require("nodemailer");
+const carriers = require("./lib/carriers.js");
+const providers = require("./lib/providers.js");
 require('dotenv').config();
 
 const PORT = process.env.PORT || 80;
@@ -38,6 +40,17 @@ const MAX_SIGNINS_DURING_DEER_SEASON = 2;
 const NEW_CONNECTION_TIME = 2000;
 const PROTOCOL_CONNECTION_LOST = "PROTOCOL_CONNECTION_LOST";
 const HISTORY_LIMIT = 10;
+const HUNT_CLUB_FROM = '"Hunt Club Mail" <huntclubmail@gmail.com>';
+const SMTP_TRANSPORT = {
+    host: process.env.MAILER_HOST,
+    port: process.env.MAILER_PORT,
+    auth: {
+        user: process.env.MAILER_EMAIL,
+        pass: process.env.MAILER_PASSWORD
+    },
+    secure: process.env.MAILER_SECURE ? true : false
+};
+const ON_DECK_TIMEOUT = 500;
 
 const ERROR_MESSAGES = {
     someoneElsePunchedIn: "Someone else is already at that location",
@@ -633,16 +646,9 @@ async function performViolatorsReport() {
     else report = `<table border="1" cellpadding="5"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Map</th><th>Location</th></tr></thead><tbody>${report}</tbody></table>`;
     report = `<h1>Violators Report</h1>${report}`;
 
-    let smtp = nodemailer.createTransport({
-        host: process.env.MAILER_HOST,
-        port: process.env.MAILER_PORT,
-        auth: {
-            user: process.env.MAILER_EMAIL,
-            pass: process.env.MAILER_PASSWORD
-        }
-    });
+    let smtp = nodemailer.createTransport(SMTP_TRANSPORT);
     smtp.sendMail({
-        from: '"Hunt Club Mail" <huntclubmail@gmail.com>',
+        from: HUNT_CLUB_FROM,
         to: process.env.ADMIN_EMAIL,
         subject: "Violators Report - " + new Date().toLocaleDateString("en-US", {timeZone: "UTC"}),
         html: report
@@ -869,7 +875,7 @@ async function performDrawing() {
             }
         }
     }
-    [rows, fields] = await connection.execute("SELECT drawings.id, drawings.user_id, passes.id AS priority FROM drawings LEFT OUTER JOIN passes ON drawings.id = passes.drawing_id WHERE draw_order is null");
+    [rows, fields] = await connection.execute("SELECT drawings.id, drawings.user_id, users.phone, passes.id AS priority FROM drawings JOIN users ON users.id = drawings.user_id LEFT OUTER JOIN passes ON drawings.id = passes.drawing_id WHERE draw_order is null");
     let priorityRows = shuffle(rows.filter( row => row.priority ));
     let normalRows = shuffle(rows.filter( row => !row.priority ));
     drawEntrants = [...priorityRows, ...normalRows];
@@ -889,6 +895,8 @@ function advancePick() {
     else drawIndex ++;
     drawChecksForUser = 0;
 
+    sendDrawingTextAlert();
+
     // end of draw
     if( drawIndex === drawEntrants.length ) {
         drawEntrants = [];
@@ -898,6 +906,84 @@ function advancePick() {
     }
     else {
         drawTimeout = setTimeout(advancePick, TIME_TO_PICK);
+    }
+}
+
+/**
+ * Send a text alert for the drawing.
+ */
+function sendDrawingTextAlert() {
+    var shouldWait = false;
+    // First in the draw, send them an alert
+    if( drawIndex === 0 ) {
+        var number = drawEntrants[drawIndex].phone;
+        var message = "It's your turn to draw";
+        sendTextParse( number, message );
+        shouldWait = true;
+    }
+    if( drawEntrants[drawIndex+1] ) {
+        function sendOnDeck() {
+            var number = drawEntrants[drawIndex+1].phone;
+            var message = "You're on deck to draw";
+            sendTextParse( number, message );
+        }
+        if( shouldWait ) setTimeout( sendOnDeck, ON_DECK_TIMEOUT ); // avoid quick succession emails
+        else sendOnDeck();
+    }
+}
+
+/**
+ * Send a text to a phone number that will be parsed (stripped of non-digits).
+ * @param {string} number - The phone number to send to.
+ * @param {string} message - The message to send.
+ */
+function sendTextParse( number, message ) {
+    if( number ) {
+        number = number.replace(/[^\d]/g, "");
+        if( number ) {
+            sendText( number, message );
+        }
+    }
+}
+
+/**
+ * Send a text message.
+ * Taken from here: https://github.com/typpo/textbelt/blob/master/lib/text.js
+ * @param {string} phone - phone number to text
+ * @param {string} message - message to send
+ * @param {string} carrier - carrier to use (may be null)
+ * @param {string} region - region to use (defaults to US)
+ */
+async function sendText(phone, message, carrier, region) {
+    console.log("sending text to " + phone);
+    let providersList;
+    if (carrier) providersList = carriers[carrier];
+    else providersList = providers[region || 'us'];
+
+    const transporter = nodemailer.createTransport(SMTP_TRANSPORT);
+
+    const p = Promise.all(providersList.map((provider) => {
+        const to = provider.replace('%s', phone);
+
+        const mailOptions = {
+            to,
+            subject: null,
+            text: message,
+            html: message,
+            from: HUNT_CLUB_FROM
+        };
+
+        return new Promise((resolve, reject) => transporter.sendMail(mailOptions, (err, info) => {
+            if (err) return reject(err);
+            return resolve(info);
+        }));
+    }));
+
+    try {
+        await p;
+    }
+    catch(err) {
+        console.log(err);
     }
 }
 
