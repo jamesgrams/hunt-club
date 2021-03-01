@@ -37,7 +37,7 @@
     width: 170px;
 }
 
-.popout-title {
+.popout-title, .history-title {
     font-weight: bold;
 }
 
@@ -50,7 +50,7 @@ button {
     display: none;
 }
 
-#text-section, #text-section input, #text-section button, .popout button, #chat button, #chat-message, #admin input, #admin button, #admin, #admin select, #admin option {
+#text-section, #text-section input, #text-section button, .popout button, .history button, #chat button, #chat-message, #admin input, #admin button, #admin, #admin select, #admin option {
     font-size: 18px;
 }
 
@@ -167,4 +167,40 @@ nav > ul > li {
 
 #pass-count::before {
     content: "Priority passes: ";
+}
+
+.blocker {
+    background-color: rgba(0, 0, 0, 0.4);
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 3;
+}
+
+.modal {
+    background-color: white;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 4;
+    border: 2px solid black;
+    padding: 10px 20px;
+    border-radius: 25px;
+    box-sizing: border-box;
+    overflow: auto;
+    max-height: 400px;
+    min-width: 300px;
+}
+
+.history-date {
+    margin-top: 10px;
+    font-weight: bold;
+}
+
+.history-time {
+    color: grey;
+    font-size: 75%;
 }

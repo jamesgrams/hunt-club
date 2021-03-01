@@ -157,7 +157,9 @@ function setupPhysical() {
                 }, errorToast);
             }, function() {
                 createToast("Could not fetch location");
-            })
+            }, {
+                enableHighAccuracy: true
+            });
         }
     }
 }
@@ -544,12 +546,117 @@ function createPopout(location, boxElement) {
         }, errorToast);
     }
     popout.appendChild(punch);
+
+    var history = document.createElement("button");
+    history.innerText = "History";
+    history.onclick = function() {
+        makeRequest("GET", "/history", {
+            locationId: location.location.id
+        }, function(text) {
+
+            var json = JSON.parse(text);
+            var content = document.createElement("div");
+            content.classList.add("history");
+            var title = document.createElement("div");
+            title.classList.add("history-title");
+            title.innerText = "History for " + location.location.name;
+            content.appendChild(title);
+
+            var currentDate = null;
+            function addContent() {
+                var contentButton = content.querySelector("button");
+                if( !json.history.huntings.length ) {
+                    if( contentButton ) contentButton.parentElement.removeChild(contentButton);
+                    return;
+                }
+
+                for( var i=0; i<json.history.huntings.length; i++ ) {
+                    var current = json.history.huntings[i];
+
+                    if( current.date != currentDate ) {
+                        var date = document.createElement("div");
+                        date.classList.add("history-date");
+                        date.innerText = current.date
+                        content.appendChild(date);
+                        currentDate = current.date;
+                    }
+
+                    var line = document.createElement("div");
+                    line.classList.add("history-line");
+                    var name = document.createElement("div");
+                    name.classList.add("history-name");
+                    name.innerText = current.user.name;
+                    line.appendChild(name);
+                    var times = document.createElement("div");
+                    times.classList.add("history-time");
+                    times.innerText = current.time.join(" - ");
+                    line.appendChild(times);
+
+                    content.appendChild(line);
+
+                }
+                if( contentButton ) {
+                    content.appendChild(contentButton);
+                }
+            }
+            addContent( json );
+            var loadMore = document.createElement("button");
+            loadMore.innerText = "Load More";
+            loadMore.onclick = function() {
+                makeRequest("GET", "/history", {
+                    locationId: location.location.id,
+                    from: json.history.next
+                }, function(text) {
+                    json = JSON.parse(text);
+                    addContent();
+                }, errorToast);
+            }
+            content.appendChild(loadMore);
+            createModal( content );
+        }, errorToast);
+    }
+    popout.appendChild(history);
+
     boxElement.appendChild(popout);
     document.body.onclick = function() {
         try {
             popout.parentElement.removeChild(popout);
         }
         catch(err) {}
+    }
+}
+
+/**
+ * Create a modal.
+ * @param {HTMLElement} content - The content for the modal.
+ */
+function createModal( content ) {
+    closeModal();
+    var blocker = document.createElement("div");
+    blocker.classList.add("blocker");
+    blocker.onclick = function(e) {
+        e.stopPropagation();
+        closeModal();
+    }
+    var modal = document.createElement("div");
+    modal.classList.add("modal");
+    modal.onclick = function(e) {
+        e.stopPropagation();
+    }
+    modal.appendChild(content);
+    document.body.appendChild(blocker);
+    document.body.appendChild(modal);
+}
+
+/**
+ * Close a current modal if it exists.
+ */
+function closeModal() {
+    var modal = document.querySelector(".modal");
+    if( modal ) {
+        modal.parentElement.removeChild(modal);
+        var blocker = document.querySelector(".blocker");
+        if( blocker ) blocker.parentElement.removeChild(blocker);
     }
 }
 

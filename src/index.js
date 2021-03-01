@@ -35,6 +35,9 @@ const OFF_SEASON_START = 5;
 const OFF_SEASON_END = 7;
 const DEER_SEASON_START = 8;
 const MAX_SIGNINS_DURING_DEER_SEASON = 2;
+const NEW_CONNECTION_TIME = 2000;
+const PROTOCOL_CONNECTION_LOST = "PROTOCOL_CONNECTION_LOST";
+const HISTORY_LIMIT = 10;
 
 const ERROR_MESSAGES = {
     someoneElsePunchedIn: "Someone else is already at that location",
@@ -58,7 +61,8 @@ const ERROR_MESSAGES = {
     cannotDeleteSelf: "You can't delete yourself",
     missingUserFields: "Please fill out all fields",
     pleaseEnterTheNextDrawFirst: "Please enter the next draw first",
-    noPassesAvailable: "No passes available"
+    noPassesAvailable: "No passes available",
+    noLocationSpecified: "No location specified"
 }
 
 let connection;
@@ -248,6 +252,17 @@ app.post("/priority", async function(request, response) {
     } );
 });
 
+// get history
+app.get("/history", async function(request, response) {
+    await action( request, response, true, async ( request, user ) => {
+        let usage = await history( request.query.locationId, request.query.from );
+        return Promise.resolve({
+            status: SUCCESS,
+            history: usage
+        })
+    } );
+});
+
 /**
  * Perform a standard action.
  * @param {Request} request - The request object.
@@ -289,16 +304,39 @@ async function action( request, response, validateUser, successFunction, validat
 
 main();
 
+/**
+ * Create a new connection.
+ */
+async function newConnection() {
+    try {
+        connection = await mysql.createConnection({
+            host: process.env.MYSQL_HOST,
+            user: process.env.MYSQL_USER,
+            password: process.env.MYSQL_PASSWORD,
+            database: process.env.MYSQL_DATABASE,
+            port: process.env.MYSQL_PORT,
+            timezone: new Date().toString().match(/([-\+][0-9]+)\s/)[1].replace(/(\d{2})$/, ":$1").replace(/\+/,"=").replace(/\-/,"+").replace(/=/,"-")
+        });
+    }
+    catch(err) {
+        console.log(err);
+        setTimeout(newConnection, NEW_CONNECTION_TIME);
+    }
+
+    connection.on("error", function(err) {
+        console.log(err);
+        if( err.code === PROTOCOL_CONNECTION_LOST ) {
+            newConnection();
+        }
+        else {
+            throw err;
+        }
+    });
+}
+
 // Functions
 async function main() {
-    connection = await mysql.createConnection({
-        host: process.env.MYSQL_HOST,
-        user: process.env.MYSQL_USER,
-        password: process.env.MYSQL_PASSWORD,
-        database: process.env.MYSQL_DATABASE,
-        port: process.env.MYSQL_PORT,
-        timezone: new Date().toString().match(/([-\+][0-9]+)\s/)[1].replace(/(\d{2})$/, ":$1").replace(/\+/,"=").replace(/\-/,"+").replace(/=/,"-")
-    });
+    await newConnection();
 
     // script can be used to add a user with --email <email> --password <password> --name <name> --phone <phone>
     // dotenv helps with .env file - does what heroku does
@@ -512,6 +550,56 @@ async function skip( userId ) {
 }
 
 /**
+ * Get the hunting history for a location.
+ * @param {string} locationId - The id of the location to fetch history for.
+ * @param {number} [from] - The starting position to fetch history from.
+ * @returns {Promise<Object>} - A promise containing with an array of Objects, each with user information and a pair of times for check in/check out and a number of where to start next.
+ */
+async function history( locationId, from=0 ) {
+    if( !locationId ) return Promise.reject( ERROR_MESSAGES.noLocationSpecified );
+    // At midnight we reset, since status only gets from curdate anyway
+    let [rows, fields] = await connection.execute("SELECT users.id AS user_id, users.name AS user_name, users.email AS user_email, users.phone AS user_phone, checks.created AS created FROM users JOIN checks ON users.id = checks.user_id JOIN locations ON checks.location_id = locations.id WHERE locations.id = ? ORDER BY checks.created desc LIMIT ? OFFSET ?", [locationId, HISTORY_LIMIT+1, from]);
+
+    let prevUser = null;
+    let prevDay = null;
+    let huntings = [];
+    let time = null;
+    let count = 0;
+    for( let row of rows ) {
+        let formattedCreated = row.created.toLocaleDateString("en-US", {timeZone: "UTC"});
+        // start a new pair of check in/check out - either different user or starting a new day or already got a pair
+        if( row.user_id != prevUser || formattedCreated != prevDay || time.length > 1 ) {
+
+            // we fetch history limit + 1, but if we'd be starting a new pair on the last one, just break
+            // we know we only need to fetch +1, since we need complete pairs
+            if( count >= HISTORY_LIMIT ) break;
+
+            time = [];
+            huntings.push({
+                user: {
+                    id: row.user_id,
+                    name: row.user_name,
+                    email: row.user_email,
+                    phone: row.user_phone
+                },
+                time: time,
+                date: formattedCreated
+            });
+        }
+        time.unshift(row.created.toLocaleTimeString("en-US", {timeZone: "UTC"}).replace(/:\d+\s/," "));
+
+        prevUser = row.user_id;
+        prevDay = formattedCreated;
+        count++;
+    }
+
+    return Promise.resolve({
+        next: from + count,
+        huntings: huntings
+    });
+}
+
+/**
  * Check into a physical location.
  * @param {number} lat - The latitude. 
  * @param {number} lng - The longitude.
@@ -537,7 +625,7 @@ async function physical( lat, lng, userId ) {
  */
 async function performViolatorsReport() {
     // this might get people who sign out the next day as well - perhaps a good thing
-    let [rows, fields] = await connection.execute("SELECT users.id AS user_id, users.name AS user_name, users.email AS user_email, users.phone AS user_phone, locations.id AS location_id, locations.name AS location_name, maps.id AS map_id, maps.name AS map_name FROM users JOIN checks ON users.id = checks.user_id JOIN locations ON checks.location_id = locations.id JOIN maps ON locations.map_id = maps.id LEFT OUTER JOIN physicals ON locations.map_id = physicals.map_id WHERE physicals.id is null AND DATE(checks.created) = CURDATE()");
+    let [rows, fields] = await connection.execute("SELECT users.id AS user_id, users.name AS user_name, users.email AS user_email, users.phone AS user_phone, locations.id AS location_id, locations.name AS location_name, maps.id AS map_id, maps.name AS map_name FROM users JOIN checks ON users.id = checks.user_id JOIN locations ON checks.location_id = locations.id JOIN maps ON locations.map_id = maps.id LEFT OUTER JOIN (SELECT * FROM physicals WHERE DATE(created) = CURDATE()) AS physicals ON locations.map_id = physicals.map_id WHERE physicals.id is null AND DATE(checks.created) = CURDATE() GROUP BY users.id, locations.id");
     let report = rows.map( row => {
         return `<tr><td>${row.user_name}</td><td>${row.user_email}</td><td>${row.user_phone}</td><td>${row.map_name}</td><td>${row.location_name}</td></tr>`;
     }).join("");
@@ -556,7 +644,7 @@ async function performViolatorsReport() {
     smtp.sendMail({
         from: '"Hunt Club Mail" <huntclubmail@gmail.com>',
         to: process.env.ADMIN_EMAIL,
-        subject: "Violators Report - " + new Date().toLocaleDateString(),
+        subject: "Violators Report - " + new Date().toLocaleDateString("en-US", {timeZone: "UTC"}),
         html: report
     });
     console.log("mail sent");
@@ -906,7 +994,7 @@ function startDrawAtRightTime() {
     let now = new Date();
     // send at 5am
     // be sure TZ is set properly in heroku's environment variables - we are on eastern time, so that's when our sign up is
-    let millisTilSend = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 30, 0, 0) - now;
+    let millisTilSend = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0, 0, 0) - now;
     if (millisTilSend < 0) {
         millisTilSend += 86400000; // it's after 5am, try 5am tomorrow.
     }
