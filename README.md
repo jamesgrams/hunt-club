@@ -30,6 +30,7 @@ Hunt Club will let a user log in, sign in and out from locations, and enter draw
     11. `MAILER_PASSWORD`,
     12. `ADMIN_EMAIL`
     13. `NODE_ENV` - (Set to development to avoid https redirect)
+    14. `MAILER_SECURE` - (Optional if you want to use secure email)
 
 ## Developer Tips
 1. When loading in a map, try to make it similar size to the other ones. You should also calculate the circle diameter in percentage of the total map with for the clickable circles.

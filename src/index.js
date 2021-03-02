@@ -40,8 +40,8 @@ const MAX_SIGNINS_DURING_DEER_SEASON = 2;
 const NEW_CONNECTION_TIME = 2000;
 const PROTOCOL_CONNECTION_LOST = "PROTOCOL_CONNECTION_LOST";
 const HISTORY_LIMIT = 10;
-const HUNT_CLUB_FROM = '"Hunt Club Mail" <huntclubmail@gmail.com>';
-const SMTP_TRANSPORT = {
+const HUNT_CLUB_FROM = '"Hunt Club Mail" <huntclubmail@yahoo.com>';
+let SMTP_TRANSPORT = {
     host: process.env.MAILER_HOST,
     port: process.env.MAILER_PORT,
     auth: {
@@ -51,6 +51,7 @@ const SMTP_TRANSPORT = {
     secure: process.env.MAILER_SECURE ? true : false
 };
 const ON_DECK_TIMEOUT = 500;
+const DRAWING_HOUR = 5;
 
 const ERROR_MESSAGES = {
     someoneElsePunchedIn: "Someone else is already at that location",
@@ -363,6 +364,8 @@ async function main() {
     app.listen(PORT);
     startDrawAtRightTime();
     startReportAtRightTime();
+
+    setTimeout( () => performDrawing(), 5000 );
 }
 
 /**
@@ -536,7 +539,8 @@ async function check(locationId, userId, force, guest) {
         [rows, fields] = await connection.execute("SELECT count(1) AS count FROM checks WHERE user_id = ? AND location_id = ? ORDER BY created DESC", [userId, locationId]);
         // We're checking in
         if( rows[0].count % 2 !== 1 ) {
-            [rows, fields] = await connection.execute("SELECT SUM(count) AS count FROM (SELECT location_id, CEIL(count(1)/2) AS count FROM checks WHERE user_id = ? AND DATE(created) = CURDATE() GROUP BY location_id) AS checkins_by_location", [userId]);
+            // will only count as a sign in, if you were signed in to the spot still past 6am
+            [rows, fields] = await connection.execute("SELECT SUM(count) AS count FROM (SELECT location_id, CEIL(count(1)/2) AS count FROM checks WHERE user_id = ? AND DATE(created) = CURDATE() AND HOUR(created) > ? GROUP BY location_id) AS checkins_by_location", [userId, DRAWING_HOUR]);
             if( rows[0].count >= MAX_SIGNINS_DURING_DEER_SEASON ) {
                 return Promise.reject(ERROR_MESSAGES.deerSeasonMaxSignIns);
             }
@@ -1080,7 +1084,7 @@ function startDrawAtRightTime() {
     let now = new Date();
     // send at 5am
     // be sure TZ is set properly in heroku's environment variables - we are on eastern time, so that's when our sign up is
-    let millisTilSend = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0, 0, 0) - now;
+    let millisTilSend = new Date(now.getFullYear(), now.getMonth(), now.getDate(), DRAWING_HOUR, 0, 0, 0) - now;
     if (millisTilSend < 0) {
         millisTilSend += 86400000; // it's after 5am, try 5am tomorrow.
     }
