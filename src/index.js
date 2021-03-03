@@ -364,8 +364,6 @@ async function main() {
     app.listen(PORT);
     startDrawAtRightTime();
     startReportAtRightTime();
-
-    setTimeout( () => performDrawing(), 5000 );
 }
 
 /**
@@ -919,7 +917,7 @@ function advancePick() {
 function sendDrawingTextAlert() {
     var shouldWait = false;
     // First in the draw, send them an alert
-    if( drawIndex === 0 ) {
+    if( drawIndex === 0 && drawEntrants[0] ) {
         var number = drawEntrants[drawIndex].phone;
         var message = "It's your turn to draw";
         sendTextParse( number, message );
