@@ -210,6 +210,21 @@ app.post("/user", async function(request, response) {
     let validateUser = request.body.admin || request.body.enabled; // anyone can add a user, but only an admin can enable a user
     await action( request, response, validateUser, async ( request, user ) => {
         await addUser( request.body.email, request.body.password, request.body.name, request.body.phone, request.body.admin, request.body.enabled );
+        try {
+            if( process.env.ADMIN_EMAIL && !validateUser ) {
+                let smtp = nodemailer.createTransport(SMTP_TRANSPORT);
+                smtp.sendMail({
+                    from: HUNT_CLUB_FROM,
+                    to: process.env.ADMIN_EMAIL,
+                    subject: "Hunt Club Signup",
+                    html: "Name: " + request.body.name + "<br>Email: " + request.body.email + "<br>Phone: " + request.body.phone
+                });
+                console.log("mail sent");
+            }
+        }
+        catch(err) {
+            console.log(err);
+        }
         return Promise.resolve({
             status: SUCCESS
         })
