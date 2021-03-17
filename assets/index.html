@@ -73,13 +73,15 @@
                     </div>
                 </form>
             </div>
-            <div id="admin" class="hidden hidden-for-page">
+            <div id="admin" class="hidden-for-page">
                 <select id="admin-select"></select>
                 <div id="admin-current-user"></div>
                 <label for="admin-email">Email: <input required type="email" id="admin-email" name="admin-email"/></label>
                 <label for="admin-password">Password: <input required type="password" id="admin-password" name="admin-password"/></label>
                 <label for="admin-name">Name: <input required type="text" id="admin-name" name="admin-name"/></label>
                 <label for="admin-phone">Phone: <input required type="tel" id="admin-phone" name="admin-phone"/></label>
+                <label for="admin-admin">Admin: <input type="checkbox" id="admin-admin" name="admin-admin"/></label>
+                <label for="admin-enabled">Enabled: <input type="checkbox" id="admin-enabled" name="admin-enabled"/></label>
                 <button id="add-user">Add User</button>
                 <button id="update-user" class="hidden">Update User</button>
                 <button id="delete-user" class="hidden">Delete User</button>

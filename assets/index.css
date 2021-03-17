@@ -47,7 +47,7 @@ button {
 }
 
 .hidden, .hidden-for-page {
-    display: none;
+    display: none !important;
 }
 
 #text-section, #text-section input, #text-section button, .popout button, .history button, #chat button, #chat-message, #admin input, #admin button, #admin, #admin select, #admin option {

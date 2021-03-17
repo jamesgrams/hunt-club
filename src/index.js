@@ -207,33 +207,37 @@ app.post("/chat", async function(request, response) {
 
 // Add a user
 app.post("/user", async function(request, response) {
-    await action( request, response, true, async ( request, user ) => {
-        await addUser( request.body.email, request.body.password, request.body.name, request.body.phone );
+    let validateUser = request.body.admin || request.body.enabled; // anyone can add a user, but only an admin can enable a user
+    await action( request, response, validateUser, async ( request, user ) => {
+        await addUser( request.body.email, request.body.password, request.body.name, request.body.phone, request.body.admin, request.body.enabled );
         return Promise.resolve({
             status: SUCCESS
         })
-    }, true );
+    }, validateUser );
 });
 
 // Get users
 app.get("/user", async function(request, response) {
     await action( request, response, true, async ( request, user ) => {
-        let users = await getUsers();
+        let id = request.query.id;
+        if( !id || id != user.id ) await validateToken(request.cookies[TOKEN_COOKIE], true); // If getting info for self, must validate admin
+        let users = await getUsers( id );
         return Promise.resolve({
             status: SUCCESS,
             users: users
         })
-    }, true );
+    }, false );
 });
 
 // Update user
 app.put("/user", async function(request, response) {
     await action( request, response, true, async ( request, user ) => {
-        await updateUser( request.body.id, request.body.email, request.body.password, request.body.name, request.body.phone );
+        if( request.body.id != user.id ) user = await validateToken(request.cookies[TOKEN_COOKIE], true); // If not updating self, must validate admin
+        await updateUser( request.body.id, request.body.email, request.body.password, request.body.name, request.body.phone, request.body.admin, request.body.enabled  );
         return Promise.resolve({
             status: SUCCESS
         })
-    }, true );
+    }, (request.body.admin || (request.body.enabled !== undefined && !request.body.enabled)) ? true : false );
 });
 
 // delete user
@@ -368,16 +372,25 @@ async function main() {
 
 /**
  * Get a list of all users.
+ * @param {string} id - An optional ID to fetch a single user.
  * @returns {Promise<Array>} An array of all the users.
  */
-async function getUsers() {
-    let [rows, fields] = await connection.execute("SELECT id, name, email, phone FROM users");
+async function getUsers( id ) {
+    let query = "SELECT id, name, email, phone, admin, enabled FROM users";
+    let queryParams = [];
+    if( id ) {
+        query += " where id = ?";
+        queryParams.push(id);
+    }
+    let [rows, fields] = await connection.execute(query, queryParams);
     return Promise.resolve(rows.map(row => {
         return {
             id: row.id,
             name: row.name,
             email: row.email,
-            phone: row.phone
+            phone: row.phone,
+            admin: row.admin,
+            enabled: row.enabled
         }
     }));
 }
@@ -388,11 +401,13 @@ async function getUsers() {
  * @param {string} password - The user password.
  * @param {string} name - The user name.
  * @param {string} phone - The user phone.
+ * @param {boolean} admin - If the user is an admin.
+ * @param {boolean} enabled - If the user is enabled.
  */
-async function addUser( email, password, name, phone ) {
+async function addUser( email, password, name, phone, admin=null, enabled=null ) {
     if( !email || !password || !name || !phone ) return Promise.reject(ERROR_MESSAGES.missingUserFields);
     let result = passwordToHash(password);
-    await connection.execute("INSERT INTO users(email,hash,salt,name,phone) VALUES(?,?,?,?,?)", [email,result.hash,result.salt,name,phone]);
+    await connection.execute("INSERT INTO users(email,hash,salt,name,phone,admin,enabled) VALUES(?,?,?,?,?,?,?)", [email,result.hash,result.salt,name,phone,admin,enabled]);
     return Promise.resolve();
 }
 
@@ -412,10 +427,12 @@ async function deleteUser( id, userId ) {
  * @param {string} id - The user ID. 
  * @param {string} [email] - The email. 
  * @param {string} [password] - The password.
- * @param {name} [name] - The user name.
- * @param {phone} [phone] - The user phone.
+ * @param {string} [name] - The user name.
+ * @param {string} [phone] - The user phone.
+ * @param {boolean} [admin] - If the user is an admin.
+ * @param {boolean} [enabled] - If the user is enabled.
  */
-async function updateUser( id, email, password, name, phone ) {
+async function updateUser( id, email, password, name, phone, admin, enabled ) {
     if( !id ) return Promise.reject(ERROR_MESSAGES.noUserSpecified);
     let queryParams = [];
     let queryParts = [];
@@ -437,6 +454,14 @@ async function updateUser( id, email, password, name, phone ) {
     if( phone ) {
         queryParts.push("phone = ?");
         queryParams.push(phone);
+    }
+    if( admin !== undefined ) {
+        queryParts.push("admin = ?");
+        queryParams.push(admin);
+    }
+    if( admin !== undefined ) {
+        queryParts.push("enabled = ?");
+        queryParams.push(enabled);
     }
     if( queryParams.length ) {
         let query = "UPDATE users SET " + queryParts.join(",") + " WHERE id = ?";
@@ -1000,7 +1025,7 @@ async function createToken( email, password ) {
         return Promise.reject(ERROR_MESSAGES.pleaseProvideAnEmailAndPassword);
     }
 
-    let [rows, fields] = await connection.execute("SELECT id, email, hash, salt, name, phone, admin FROM users WHERE email = ?", [email]);
+    let [rows, fields] = await connection.execute("SELECT id, email, hash, salt, name, phone, admin FROM users WHERE email = ? AND enabled = true", [email]);
     if( !rows.length ) return Promise.reject(ERROR_MESSAGES.accountDoesNotExist);
     let user = rows[0];
     
@@ -1036,8 +1061,8 @@ async function validateToken( token, asAdmin ) {
         try {
             let result = jwt.verify( token, TOKEN_KEY, TOKEN_OPTIONS );
             let rows, fields;
-            if( !asAdmin ) [rows, fields] = await connection.execute("SELECT id FROM users WHERE id = ?", [result.id]);
-            else [rows, fields] = await connection.execute("SELECT id FROM users WHERE id = ? AND admin = true", [result.id]);
+            if( !asAdmin ) [rows, fields] = await connection.execute("SELECT id FROM users WHERE id = ? AND enabled = true", [result.id]);
+            else [rows, fields] = await connection.execute("SELECT id FROM users WHERE id = ? AND admin = true AND enabled = true", [result.id]);
             if( !rows.length ) return Promise.reject(ERROR_MESSAGES.invalidToken);
             return Promise.resolve(result);
         }

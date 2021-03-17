@@ -13,6 +13,7 @@ var currentDrawStatus = {};
 var nextDrawStatus = {};
 var passes = {};
 var imageJustLoaded = false;
+var loggedInUser = {};
 
 window.addEventListener('load', function() {
 
@@ -30,21 +31,28 @@ window.addEventListener('load', function() {
  * @param {number} selectedId - The user ID to start as selected.
  */
 function setupAdmin( selectedId ) {
-    makeRequest("GET", "/user", {}, function(responseText) {
-        var users = JSON.parse(responseText).users;
+    var params = {};
+    if( !loggedInUser.admin ) params["id"] = loggedInUser.id;
+    var setupForm = function( users ) {
         var select = document.querySelector("#admin-select");
         select.innerText = "";
-        users.unshift({
-            id: "",
-            name: "",
-            email: "",
-            phone: ""
-        });
+        if( loggedInUser.admin || !loggedInUser.id ) {
+            users.unshift({
+                id: "",
+                name: "",
+                email: "",
+                phone: "",
+                admin: false,
+                enabled: false
+            });
+        }
         for( var i=0; i<users.length; i++ ) {
             var option = document.createElement("option");
             option.innerText = users[i].name;
             option.setAttribute("data-email", users[i].email);
             option.setAttribute("data-phone", users[i].phone);
+            if( users[i].admin ) option.setAttribute("data-admin","true");
+            if( users[i].enabled ) option.setAttribute("data-enabled","true");
             option.setAttribute("value", users[i].id);
             if( users[i].id == selectedId ) option.setAttribute("selected","selected");
             select.appendChild(option);
@@ -53,17 +61,31 @@ function setupAdmin( selectedId ) {
         var adminPhone = document.querySelector("#admin-phone");
         var adminName = document.querySelector("#admin-name");
         var adminPassword = document.querySelector("#admin-password");
+        var adminAdmin = document.querySelector("#admin-admin");
+        var adminEnabled = document.querySelector("#admin-enabled");
+        select.classList.remove("hidden");
+        adminAdmin.parentElement.classList.remove("hidden");
+        adminEnabled.parentElement.classList.remove("hidden");
+        if( !loggedInUser.admin ) {
+            select.classList.add("hidden");
+            adminAdmin.parentElement.classList.add("hidden");
+            adminEnabled.parentElement.classList.add("hidden");
+        }
         select.onchange = function() {
             var selectedElement = select.options[select.selectedIndex];
             var email = selectedElement.getAttribute("data-email");
             var phone = selectedElement.getAttribute("data-phone");
             var id = selectedElement.getAttribute("value");
             var name = selectedElement.innerText;
+            var admin = selectedElement.getAttribute("data-admin");
+            var enabled = selectedElement.getAttribute("data-enabled");
             if( !id ) {
                 adminEmail.value = "";
                 adminPhone.value = "";
                 adminName.value = "";
                 adminPassword.value = "";
+                adminAdmin.checked = false;
+                adminEnabled.checked = false;
                 document.querySelector("#update-user").classList.add("hidden");
                 document.querySelector("#delete-user").classList.add("hidden");
                 document.querySelector("#priority-user").classList.add("hidden");
@@ -74,10 +96,16 @@ function setupAdmin( selectedId ) {
                 adminPhone.value = phone;
                 adminName.value = name;
                 adminPassword.value = "";
+                adminAdmin.checked = admin;
+                adminEnabled.checked = enabled;
                 document.querySelector("#add-user").classList.add("hidden");
                 document.querySelector("#update-user").classList.remove("hidden");
                 document.querySelector("#delete-user").classList.remove("hidden");
                 document.querySelector("#priority-user").classList.remove("hidden");
+            }
+            if( !loggedInUser.admin ) {
+                document.querySelector("#delete-user").classList.add("hidden");
+                document.querySelector("#priority-user").classList.add("hidden");
             }
         }
         select.onchange();
@@ -87,7 +115,9 @@ function setupAdmin( selectedId ) {
                 email: adminEmail.value,
                 phone: adminPhone.value,
                 name: adminName.value,
-                password: adminPassword.value
+                password: adminPassword.value,
+                admin: loggedInUser.admin ? adminAdmin.checked : false,
+                enabled: loggedInUser.admin ? adminEnabled.checked : false
             }, function() {
                 setupAdmin();
                 createToast("User added");
@@ -100,7 +130,9 @@ function setupAdmin( selectedId ) {
                 email: adminEmail.value,
                 phone: adminPhone.value,
                 name: adminName.value,
-                password: adminPassword.value
+                password: adminPassword.value,
+                admin: loggedInUser.admin ? adminAdmin.checked : false,
+                enabled: loggedInUser.admin ? adminEnabled.checked : true
             }, function() {
                 setupAdmin( select.value );
                 createToast("User updated");
@@ -125,7 +157,16 @@ function setupAdmin( selectedId ) {
             }, errorToast);
         }
         document.querySelector("#admin").classList.remove("hidden-for-page");
-    }, errorToast);
+    }
+    if( loggedInUser.id ) {
+        makeRequest("GET", "/user", params, function(responseText) {
+            var users = JSON.parse(responseText).users;
+            setupForm( users );       
+        }, errorToast);
+    }
+    else {
+        setupForm( [] );
+    }
 }
 
 /**
@@ -208,9 +249,9 @@ function setupLogin() {
         currentDrawStatus = {};
         nextDrawStatus = {};
         passes = {};
+        loggedInUser = {};
         document.querySelector("#logout-section").classList.add("hidden");
         document.querySelector("#chat").classList.add("hidden");
-        document.querySelector("#admin").classList.add("hidden");
         document.querySelector("#login-section").classList.remove("hidden");
         document.querySelector("#user-name").innerText = "";
         document.querySelector("#chat-messages").innerText = "";
@@ -228,13 +269,10 @@ function setupLogin() {
         document.querySelector("#login-section").classList.add("hidden");
         document.querySelector("#logout-section").classList.remove("hidden");
         document.querySelector("#chat").classList.remove("hidden");
-        var info = JSON.parse(decodeURIComponent(idCookie));
-        if( info.admin ) {
-            document.querySelector("#admin").classList.remove("hidden");
-        }
-        document.querySelector("#user-name").innerText = info.name;
-        if( mapId === "admin" ) setupAdmin(); // doesn't update in fetchStatus so need to call here
+        loggedInUser = JSON.parse(decodeURIComponent(idCookie));
+        document.querySelector("#user-name").innerText = loggedInUser.name;
     }
+    if( mapId === "admin" ) setupAdmin(); // doesn't update in fetchStatus so need to call here
 
     document.querySelector("#login").onclick = function(e) {
         e.preventDefault();

@@ -8,11 +8,13 @@ CREATE TABLE users (
     name varchar(200) not null,
     phone varchar(12) not null,
     admin boolean,
+    enabled boolean,
     constraint pk_users primary key(id)
 );
 
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_admin ON users(admin);
+CREATE INDEX idx_users_enabled ON users(enabled);
 
 CREATE TABLE maps (
     id int unsigned not null auto_increment,
